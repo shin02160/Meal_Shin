@@ -1,0 +1,62 @@
+* { box-sizing: border-box; }
+:root { color-scheme: light; --bg:#f8f7f5; --surface:#fff; --alt:#f2f0f7; --accent:#7354b4; --soft:#eee8f9; --ink:#252333; --muted:#706b7c; --border:#e8e4ec; --error:#b64242; }
+body { margin:0; background:var(--bg); color:var(--ink); font: 16px/1.55 Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; }
+main { width:min(100%, 760px); margin:auto; padding:24px 16px 48px; }
+header { margin-bottom:24px; }
+.top { display:flex; align-items:center; min-height:44px; justify-content:space-between; }
+.brand { color:#60439f; font-size:13px; font-weight:800; letter-spacing:.15em; }
+h1,h2,h3,p { margin:0; }
+h1 { font-size:clamp(28px, 5vw, 36px); letter-spacing:-.045em; line-height:1.2; margin:4px 0 8px; }
+h2 { font-size:19px; letter-spacing:-.03em; }
+h3 { font-size:18px; letter-spacing:-.025em; }
+p { color:var(--muted); overflow-wrap:anywhere; }
+button,input,textarea { font:inherit; }
+button { min-height:44px; min-width:44px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--ink); padding:6px 12px; cursor:pointer; }
+button:disabled { cursor:default; opacity:.55; }
+:focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+.quiet { background:transparent; border:0; color:var(--muted); font-size:14px; }
+.datebar { display:grid; grid-template-columns:44px minmax(0,1fr) 44px; gap:8px; margin-bottom:24px; }
+.datebar button { font-size:28px; line-height:1; padding:0; }
+.datefield { min-height:52px; position:relative; display:grid; place-items:center; padding:4px; border:1px solid var(--border); border-radius:12px; background:var(--surface); text-align:center; }
+.datefield label { font-size:clamp(13px, 3.7vw, 17px); font-weight:700; }
+.datefield input { position:absolute; inset:0; width:100%; min-width:0; opacity:.001; cursor:pointer; }
+.datefield input::-webkit-calendar-picker-indicator { position:absolute; inset:0; width:100%; height:100%; margin:0; }
+.datefield:focus-within { outline:3px solid var(--accent); outline-offset:3px; }
+.section-heading, .review-footer, .gallery-controls { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.section-heading { margin-bottom:12px; }
+.pill { background:var(--soft); color:#60439f; border-radius:999px; padding:3px 10px; font-size:13px; font-weight:650; }
+.meal-list { display:grid; gap:12px; }
+.meal,.panel { border:1px solid var(--border); background:var(--surface); border-radius:20px; padding:16px; }
+.meal { display:flex; align-items:flex-start; flex-wrap:wrap; gap:12px; }
+.meal-details { flex:1 1 148px; min-width:0; }
+.meal-meta { display:flex; align-items:center; flex-wrap:wrap; gap:5px 8px; margin-bottom:6px; color:var(--muted); font-size:13px; }
+.meal p { white-space:pre-wrap; }
+.meal h3 { overflow-wrap:anywhere; }
+.shared-note { border-left:3px solid #d8caeb; padding-left:8px; margin-top:8px; }
+.photos { display:flex; flex-wrap:wrap; gap:6px; max-width:100%; }
+.photo { width:84px; height:84px; padding:0; overflow:hidden; background:var(--alt); }
+.photo img { width:100%; height:100%; object-fit:cover; display:block; }
+.photo-unavailable { font-size:12px; color:var(--muted); }
+dialog { max-width:min(600px, calc(100% - 32px)); max-height:calc(100% - 32px); padding:12px; border:1px solid var(--border); border-radius:20px; color:var(--ink); }
+dialog::backdrop { background:#252333b3; }
+.gallery-controls { margin:4px 0; }
+.gallery-controls:first-child { justify-content:flex-end; }
+.gallery-image { display:grid; place-items:center; }
+.gallery-image img { display:block; max-width:100%; max-height:65dvh; object-fit:contain; }
+.panel > p { margin:6px 0 0; }
+.panel > button { margin-top:12px; }
+.empty { text-align:center; padding:24px 12px; }
+.review { margin-top:20px; }
+textarea { display:block; width:100%; border:1px solid #a49aae; border-radius:12px; padding:12px; color:var(--ink); background:var(--surface); margin:12px 0; resize:vertical; min-height:120px; }
+textarea:disabled { background:var(--alt); }
+textarea::placeholder { color:var(--muted); }
+.review-footer { margin-top:12px; color:var(--muted); font-size:14px; }
+.save { color:white; font-weight:700; background:var(--accent); border-color:transparent; padding:8px 18px; }
+.save:hover:not(:disabled) { background:#60439f; }
+.error { color:var(--error); }
+.success { color:#207a5a; }
+@media (min-width:481px) {
+  main { padding:32px 24px 56px; }
+  .meal,.panel { padding:20px; }
+  .photo { width:100px; height:100px; }
+}
