@@ -153,9 +153,9 @@ export async function writeDraft(period: Period, draft: Omit<ReportVersion,'id'|
     '분석 상태':select(draft.state),'분석 버전':number(draft.version),'생성 일시':date(draft.createdAt),
     '기록 일수':number(draft.stats.recordedDays),'식단 건수':number(draft.stats.mealCount),'강사 총평 건수':number(draft.stats.reviewCount),
     'AI 분석 초안':rich(useBody ? bodyMarker : JSON.stringify(draft.draft)),'최종 종합 총평':rich(draft.feedback),
-    '긍정적 변화':rich(draft.draft.strengths.map(item=>item.text).join('\n')),
-    '개선 필요사항':rich(draft.draft.improvements.map(item=>item.text).join('\n')),
-    '다음 기간 목표':rich(draft.draft.proposedGoals.map(item=>item.title + ' · ' + item.text).join('\n')),
+    '긍정적 변화':rich((draft.draft?.strengths ?? []).map(item=>item.text).join('\n')),
+    '개선 필요사항':rich((draft.draft?.improvements ?? []).map(item=>item.text).join('\n')),
+    '다음 기간 목표':rich((draft.draft?.proposedGoals ?? []).map(item=>item.title + ' · ' + item.text).join('\n')),
     '분석 근거':rich(JSON.stringify(metadata(content))),
     '데이터 지문':rich(draft.fingerprint),'AI 모델 정보':rich(draft.model),
   },children));
@@ -195,6 +195,7 @@ export async function createGoal(goal: Omit<Goal,'id'|'revision'|'history'|'eval
 export async function updateGoal(goal: Goal, event: Goal['history'][number]) {
   return decodeGoal(await notion<Page>('/pages/' + goal.id,'PATCH',{properties:{
     '목표 상태':select(event.status),'강사 확정 여부':{checkbox:event.approved},
-    '최근 평가':rich(JSON.stringify([...goal.history,event])),'최종 평가일':date(event.at),
+    '최근 평가':rich(JSON.stringify([...goal.history,event])),
+    ...(event.opinion === undefined ? {'최종 평가일':date(event.at)} : {}),
   }}));
 }

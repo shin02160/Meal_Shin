@@ -85,7 +85,7 @@ async function visibleGoal(goal:Goal, visible:ReturnType<typeof makeVisibilityCh
   if (!await visible(goal.reportId)) return null;
   const history = (await Promise.all(goal.history.map(async event =>
     !event.reportId || await visible(event.reportId) ? event : null))).filter(event => event !== null);
-  return {...goal,history,evaluation:history.at(-1)?.evaluation ?? ''};
+  return {...goal,history,evaluation:history.filter(event=>event.opinion === undefined).at(-1)?.evaluation ?? ''};
 }
 export async function publicGoals() {
   const visible = makeVisibilityCheck();
@@ -131,12 +131,32 @@ export async function reportHistory(id:string) {
     await visible(row,period,input) ? row : {id:row.id,version:row.version,confirmedAt:row.confirmedAt,hidden:true as const}));
 }
 
+function validFeedback(value:unknown) {
+  if (typeof value !== 'string' || !value.trim() || value.length > feedbackLimit) {
+    throw new HttpError(400,'강사 의견을 1자 이상 6,000자 이하로 입력해 주세요.');
+  }
+  return value.trim();
+}
+
+export async function createManualPeriod(period:Period,body:Record<string,unknown>) {
+  const feedback = validFeedback(body.feedback);
+  return withReportLock(scope(period),async guard => {
+    const [input,rows] = await Promise.all([collectPeriod(period),versions(period)]);
+    const latest = rows[0];
+    if (body.expectedVersion !== (latest?.version ?? 0)) throw race();
+    if (latest && latest.state !== '확정' && latest.fingerprint === input.fingerprint &&
+        await makeSourceCheck()(latest,period,input)) throw race();
+    const version = (latest?.version ?? 0) + 1;
+    return guard.create(scope(period) + ':' + version,() => writeDraft(period,{
+      version,state:'검토중',createdAt:new Date().toISOString(),feedback,draft:null,model:'',
+      sources:input.refs,fingerprint:input.fingerprint,stats:input.stats,weeklyRefs:[],actor:'anonymous',
+    }));
+  });
+}
+
 export async function editPeriod(id:string, body:Record<string,unknown>, confirm:boolean) {
   const {period} = await getReport(id);
-  const feedback = body.feedback;
-  if (typeof feedback !== 'string' || !feedback.trim() || feedback.length > feedbackLimit) {
-    throw new HttpError(400,'종합 총평을 1자 이상 6,000자 이하로 입력해 주세요.');
-  }
+  const feedback = validFeedback(body.feedback);
   return withReportLock(scope(period),async guard => {
     const [{row}, rows, input] = await Promise.all([getReport(id),versions(period),collectPeriod(period)]);
     if (rows[0]?.id !== id || body.expectedVersion !== row.version || body.expectedRevision !== row.revision ||
@@ -154,7 +174,7 @@ export async function proposeGoal(body: Record<string,unknown>) {
   return withReportLock('goal-proposal:' + reportId + ':' + index,async guard => {
     const visible = makeVisibilityCheck();
     const report = await visible(reportId);
-    const proposed = report?.row.draft.proposedGoals[index];
+    const proposed = report?.row.draft?.proposedGoals[index];
     if (!report || !proposed) throw new HttpError(404,'확정된 리포트의 목표를 찾을 수 없습니다.');
     const key = reportId + ':' + index;
     const existing = await listGoals(key);
@@ -189,6 +209,25 @@ export async function editGoal(id:string,body:Record<string,unknown>) {
     if (goal.status === '종료') throw new HttpError(409,'종료된 목표입니다.');
     const event:Goal['history'][number] = {revision:randomUUID(),status,evaluation:evaluation.trim(),reportId,
       approved:goal.approved || body.approve === true && status === '진행중',at:new Date().toISOString(),actor:'anonymous'};
+    await guard.ensure();
+    return visibleGoal(await updateGoal(goal,event),visible);
+  });
+}
+
+export async function saveGoalOpinion(id:string,body:Record<string,unknown>) {
+  const opinion = body.opinion;
+  if (typeof opinion !== 'string' || !opinion.trim() || opinion.length > 1200) {
+    throw new HttpError(400,'강사 의견을 1자 이상 1,200자 이하로 입력해 주세요.');
+  }
+  return withReportLock('goal:' + id,async guard => {
+    const goal = await getGoal(id);
+    if (body.expectedRevision !== goal.revision) throw race();
+    const visible = makeVisibilityCheck();
+    if (!await visible(goal.reportId)) throw new HttpError(404,'공유 근거가 남아 있는 목표를 찾을 수 없습니다.');
+    const event:Goal['history'][number] = {
+      revision:randomUUID(),at:new Date().toISOString(),actor:'anonymous',status:goal.status,
+      approved:goal.approved,evaluation:'',reportId:'',opinion:opinion.trim(),
+    };
     await guard.ensure();
     return visibleGoal(await updateGoal(goal,event),visible);
   });

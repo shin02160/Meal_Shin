@@ -212,7 +212,19 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   const goalUpdate = await api('goals/'+goal.id,'PATCH',
     {expectedRevision:approved.revision,status:'유지',evaluation:'실천이 확인됐습니다.',reportId:final.id});
   assert.equal(goalUpdate.status,200);
-  assert.equal((await goalUpdate.json()).history.length,2);
+  const evaluated:Goal = await goalUpdate.json();
+  assert.equal(evaluated.history.length,2);
+  const opinionBody = {opinion:'목표를 계속 유지해 주세요.',expectedRevision:evaluated.revision};
+  const commented = await api('goals/'+goal.id+'/opinion','POST',opinionBody);
+  assert.equal(commented.status,200);
+  const commentedGoal:Goal = await commented.json();
+  assert.equal(commentedGoal.status,'유지');
+  assert.equal(commentedGoal.evaluation,'실천이 확인됐습니다.');
+  assert.equal(commentedGoal.evaluatedAt,evaluated.evaluatedAt);
+  assert.equal(commentedGoal.history.at(-1)?.opinion,opinionBody.opinion);
+  assert.equal((await api('goals/'+goal.id+'/opinion','POST',opinionBody)).status,409);
+  const goalList:Goal[] = await (await api('goals')).json();
+  assert.equal(goalList[0].history.at(-1)?.opinion,opinionBody.opinion);
 
   const month = await generate(false,0,'monthly','2026-11');
   assert.equal(month.status,200);
@@ -255,4 +267,26 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   assert.equal(later.current,null);
   assert.equal(later.needsReview,true);
   assert.equal((await api('reports/generate','POST',{type:'weekly',key},origin,'https://foreign.test')).status,403);
+
+  const beforeManual = calls;
+  delete process.env.OPENAI_API_KEY;
+  for (const [type,manualKey] of [['weekly','2026-W50'],['monthly','2026-12']]) {
+    const body = {type,key:manualKey,feedback:'강사 직접 의견',expectedVersion:0};
+    const created = await api('reports','POST',body);
+    assert.equal(created.status,201);
+    const manual:ReportVersion = await created.json();
+    assert.equal(manual.draft,null);
+    assert.equal(manual.state,'검토중');
+    assert.equal((await api('reports','POST',body)).status,409);
+    const updated:ReportVersion = await (await edit(manual,'직접 작성한 수정 의견')).json();
+    assert.equal(updated.feedback,'직접 작성한 수정 의견');
+    assert.equal((await edit(updated,'직접 작성한 확정 의견',true)).status,200);
+    const read = await (await api('reports?type='+type+'&key='+manualKey)).json();
+    assert.equal(read.final.feedback,'직접 작성한 확정 의견');
+    const next = await api('reports','POST',{...body,expectedVersion:1});
+    assert.equal(next.status,201);
+    assert.equal((await next.json()).version,2);
+    assert.equal((await (await api('reports/'+manual.id+'/history')).json())[0].feedback,'직접 작성한 확정 의견');
+  }
+  assert.equal(calls,beforeManual);
 });

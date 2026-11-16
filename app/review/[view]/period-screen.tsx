@@ -28,6 +28,7 @@ export function PeriodScreen({type,initialKey}:{type:PeriodType;initialKey:strin
   const [view,setView] = useState<View|null>(null);
   const [refresh,setRefresh] = useState(0);
   const [feedback,setFeedback] = useState('');
+  const [manual,setManual] = useState(false);
   const [dirty,setDirty] = useState(false);
   const [pending,setPending] = useState(false);
   const [loadError,setLoadError] = useState('');
@@ -39,7 +40,9 @@ export function PeriodScreen({type,initialKey}:{type:PeriodType;initialKey:strin
   const active = view?.period.key === key ? view : null;
   const current = active?.current;
   const final = active?.final;
+  const draft = current?.draft;
   const edit = current && current.state !== '확정' && !active?.currentStale;
+  const create = active && !edit && (!current || manual);
   const sourceId = current?.id ?? active?.historyId;
 
   useEffect(() => {
@@ -49,6 +52,7 @@ export function PeriodScreen({type,initialKey}:{type:PeriodType;initialKey:strin
       setView(data);
       setFeedback(data.current?.feedback ?? '');
       setDirty(false);
+      setManual(false);
       setLoadError('');
     }).catch(reason => { if (!controller.signal.aborted) setLoadError(errorText(reason)); });
     return () => controller.abort();
@@ -59,7 +63,7 @@ export function PeriodScreen({type,initialKey}:{type:PeriodType;initialKey:strin
     try { periodFor(type,value); } catch { return; }
     if (value === key) return;
     if (dirty && !window.confirm('저장하지 않은 수정 내용을 버리고 기간을 변경하시겠어요?')) return;
-    setKey(value); setView(null); setLoadError(''); setError(''); setStatus(''); setHistory(null);
+    setManual(false); setKey(value); setView(null); setLoadError(''); setError(''); setStatus(''); setHistory(null);
   }
 
   async function action(work:()=>Promise<void>, result:string) {
@@ -78,18 +82,27 @@ export function PeriodScreen({type,initialKey}:{type:PeriodType;initialKey:strin
         type,key,regenerate:active.latestVersion > 0,expectedVersion:active.latestVersion,
       });
       setView({...active,current:row,latestVersion:row.version,currentStale:false});
-      setFeedback(row.feedback); setDirty(false);
+      setFeedback(row.feedback); setDirty(false); setManual(false);
     },'AI 초안을 생성했습니다.');
   }
 
   function save(confirm:boolean) {
-    if (!current || !active) return;
+    if (!active || (!create && !current)) return;
     void action(async () => {
+      if (create) {
+        const row = await call<ReportVersion>('reports','POST',{
+          type,key,feedback,expectedVersion:active.latestVersion,
+        });
+        setView({...active,current:row,latestVersion:row.version,currentStale:false});
+        setFeedback(row.feedback); setDirty(false); setManual(false);
+        return;
+      }
+      if (!current) return;
       const row = await call<ReportVersion>('reports/' + current.id + (confirm ? '/confirm' : ''),confirm ? 'POST' : 'PATCH',{
         feedback,expectedVersion:current.version,expectedRevision:current.revision,
       });
       setView({...active,current:row,final:confirm ? row : active.final,needsReview:confirm ? false : active.needsReview});
-      setFeedback(row.feedback); setDirty(false); setConfirming(false); setHistory(null);
+      setFeedback(row.feedback); setDirty(false); setManual(false); setConfirming(false); setHistory(null);
     },confirm ? '총평을 확정했습니다.' : '검토 내용을 저장했습니다.');
   }
 
@@ -129,23 +142,27 @@ export function PeriodScreen({type,initialKey}:{type:PeriodType;initialKey:strin
           <button className="save" disabled={pending || confirming || !active.stats.mealCount} onClick={regenerate}>{active.latestVersion ? '재분석' : 'AI 초안 생성'}</button>
           <button disabled={pending || confirming} onClick={()=>{if (!dirty || window.confirm('저장하지 않은 수정 내용을 버리시겠어요?')) {setView(null);setRefresh(refresh + 1);setHistory(null);}}}>새로고침</button>
         </div>
-        {current && <details open={current.state !== '확정'}><summary>AI 초안 및 분석 근거</summary>
-          <Claims label="AI 요약" claims={[current.draft.summary]} row={current}/>
-          <Claims label="관찰 사실" claims={current.draft.observations} row={current}/>
-          <Claims label="긍정적 변화" claims={current.draft.strengths} row={current}/>
-          <Claims label="AI 해석" claims={current.draft.interpretations} row={current}/>
-          <Claims label="AI 개선 제안" claims={current.draft.improvements} row={current}/>
-          <Claims label="기존 목표 평가" claims={current.draft.goalAssessments} row={current}/>
-          <Claims label="다음 기간 목표 제안" claims={current.draft.proposedGoals} row={current}/>
-          {current.draft.limitations.map(item=><p key={item}>{item}</p>)}
+        {current && draft && <details open={current.state !== '확정'}><summary>AI 초안 및 분석 근거</summary>
+          <Claims label="AI 요약" claims={[draft.summary]} row={current}/>
+          <Claims label="관찰 사실" claims={draft.observations} row={current}/>
+          <Claims label="긍정적 변화" claims={draft.strengths} row={current}/>
+          <Claims label="AI 해석" claims={draft.interpretations} row={current}/>
+          <Claims label="AI 개선 제안" claims={draft.improvements} row={current}/>
+          <Claims label="기존 목표 평가" claims={draft.goalAssessments} row={current}/>
+          <Claims label="다음 기간 목표 제안" claims={draft.proposedGoals} row={current}/>
+          {draft.limitations.map(item=><p key={item}>{item}</p>)}
         </details>}
-        {edit && <>
-          <label htmlFor="period-feedback">종합 총평</label>
+        {current && !edit && !manual && <button disabled={pending || confirming} onClick={()=>{
+          setFeedback(final?.feedback ?? '');
+          setManual(true);
+        }}>새 강사 의견 작성</button>}
+        {(edit || create) && <>
+          <label htmlFor="period-feedback">강사 의견</label>
           <textarea id="period-feedback" value={feedback} maxLength={feedbackLimit} disabled={pending || confirming}
             onChange={event=>{setFeedback(event.target.value);setDirty(true);}}/>
           <div className="report-actions">
-            <button disabled={pending || confirming || !feedback.trim()} onClick={()=>save(false)}>초안 저장</button>
-            <button className="save" disabled={pending || confirming || !feedback.trim()} onClick={()=>setConfirming(true)}>총평 확정</button>
+            <button disabled={pending || confirming || !feedback.trim()} onClick={()=>save(false)}>{create ? '강사 의견 저장' : '초안 저장'}</button>
+            {!create && <button className="save" disabled={pending || confirming || !feedback.trim()} onClick={()=>setConfirming(true)}>총평 확정</button>}
           </div>
           {confirming && <section className="panel" aria-label="총평 확정 확인">
             <p>이 총평을 확정하고 버전 이력에 보관할까요?</p>
@@ -154,7 +171,7 @@ export function PeriodScreen({type,initialKey}:{type:PeriodType;initialKey:strin
           </section>}
         </>}
         {final && <section><h3>확정 총평 · v{final.version}</h3><p className="report-copy">{final.feedback}</p>
-          {final.draft.proposedGoals.map((goal,index)=><div className="goal-proposal" key={index}>
+          {final.draft?.proposedGoals.map((goal,index)=><div className="goal-proposal" key={index}>
             <p>{goal.title} · {goal.text}</p>
             <button disabled={pending} onClick={()=>void action(async()=>{await call('goals','POST',{reportId:final.id,index});},'개선 목표에 제안을 추가했습니다.')}>목표로 추가</button>
           </div>)}</section>}

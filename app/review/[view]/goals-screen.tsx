@@ -7,6 +7,7 @@ import { call, errorText } from './api';
 
 function GoalCard({goal,today,onSaved}:{goal:Goal;today:string;onSaved:(goal:Goal)=>void}) {
   const [status,setStatus] = useState(goal.status);
+  const [opinion,setOpinion] = useState('');
   const [evaluation,setEvaluation] = useState('');
   const [periodType,setPeriodType] = useState<PeriodType>('weekly');
   const [periodDate,setPeriodDate] = useState(today);
@@ -32,6 +33,17 @@ function GoalCard({goal,today,onSaved}:{goal:Goal;today:string;onSaved:(goal:Goa
     finally {setPending(false);}
   }
 
+  async function saveOpinion() {
+    if (pending || !opinion.trim()) return;
+    setPending(true);setError('');setNotice('');
+    try {
+      const row = await call<Goal>('goals/' + goal.id + '/opinion','POST',{opinion,expectedRevision:goal.revision});
+      onSaved(row);setOpinion('');setNotice('강사 의견을 저장했습니다.');
+    } catch (reason) {setError(errorText(reason));}
+    finally {setPending(false);}
+  }
+
+  const latestOpinion = goal.history.findLast(event=>event.opinion)?.opinion;
   return <article className="panel">
     <div className="section-heading"><h2>{goal.title}</h2><span className="pill">{goal.status}</span></div>
     <p>{goal.kind} · {goal.criteria}</p>
@@ -50,9 +62,16 @@ function GoalCard({goal,today,onSaved}:{goal:Goal;today:string;onSaved:(goal:Goa
       </div>}
       <button className="save" disabled={pending}>목표 업데이트</button>
     </form>}
+    <form onSubmit={event=>{event.preventDefault();void saveOpinion();}}>
+      <label htmlFor={'opinion-'+goal.id}>강사 의견</label>
+      {latestOpinion && <p className="report-copy">{latestOpinion}</p>}
+      <textarea id={'opinion-'+goal.id} value={opinion} maxLength={1200} disabled={pending} onChange={e=>setOpinion(e.target.value)}/>
+      <button className="save" disabled={pending || !opinion.trim()}>강사 의견 저장</button>
+    </form>
     {goal.history.length > 0 && <details><summary>변경 이력</summary>
       <ul>{goal.history.map((event,index)=><li key={index}>{event.at.slice(0,10)} · {event.status}
         {event.evaluation && <p className="report-copy">{event.evaluation}</p>}
+        {event.opinion && <p className="report-copy">강사 의견 · {event.opinion}</p>}
         {event.reportId && <a href={'https://www.notion.so/'+event.reportId.replaceAll('-','')}>근거 리포트</a>}
       </li>)}</ul>
     </details>}

@@ -12,7 +12,7 @@ export type Draft = {
 export type ReportState = 'AI 초안' | '검토중' | '확정';
 export type ReportVersion = {
   id:string; version:number; revision:string; state:ReportState; createdAt:string; confirmedAt?:string;
-  feedback:string; draft:Draft; sources:PeriodInput['refs']; fingerprint:string;
+  feedback:string; draft:Draft|null; sources:PeriodInput['refs']; fingerprint:string;
   model:string; actor:'anonymous'; stats:PeriodInput['stats']; weeklyRefs:string[];
 };
 export type Goal = {
@@ -20,5 +20,5 @@ export type Goal = {
   status:string; approved:boolean; reportId:string; proposedAt:string; revision:string;
   evaluation:string; evaluatedAt:string; history:GoalEvent[];
 };
-export type GoalEvent = {revision?:string; at:string; status:string; approved:boolean; evaluation:string; reportId:string; actor:'anonymous'};
+export type GoalEvent = {revision?:string; opinion?:string; at:string; status:string; approved:boolean; evaluation:string; reportId:string; actor:'anonymous'};
 export type ReportView = {period:Period; stats:PeriodInput['stats']; current:ReportVersion|null; final:ReportVersion|null; needsReview:boolean; currentStale:boolean; historyId?:string; daily:PeriodInput['daily']};

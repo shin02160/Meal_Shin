@@ -1,6 +1,6 @@
 import { HttpError, json } from './errors';
 import { periodFor } from './period';
-import { editGoal, editPeriod, generatePeriod, proposeGoal, publicGoals, readPeriod, reportHistory } from './period-reviews';
+import { createManualPeriod, saveGoalOpinion, editGoal, editPeriod, generatePeriod, proposeGoal, publicGoals, readPeriod, reportHistory } from './period-reviews';
 import { limitWrites } from './report-storage';
 
 export async function periodApi(request:Request,path:string[], readBody:()=>Promise<Record<string,unknown>>) {
@@ -13,6 +13,12 @@ export async function periodApi(request:Request,path:string[], readBody:()=>Prom
     }
     if (area === 'reports' && path.length === 3 && action === 'history') return json(await reportHistory(id));
     if (area === 'goals' && path.length === 1) return json(await publicGoals());
+  }
+  if (area === 'reports' && path.length === 1 && method === 'POST') {
+    const body = await readBody();
+    const period = periodFor(body.type,body.key);
+    await limitWrites('review',25,60);
+    return json(await createManualPeriod(period,body),201);
   }
   if (area === 'reports' && path.length === 2 && id === 'generate' && method === 'POST') {
     const body = await readBody();
@@ -30,6 +36,11 @@ export async function periodApi(request:Request,path:string[], readBody:()=>Prom
     const body = await readBody();
     await limitWrites('goal',20,60);
     return json(await proposeGoal(body));
+  }
+  if (area === 'goals' && path.length === 3 && action === 'opinion' && method === 'POST') {
+    const body = await readBody();
+    await limitWrites('goal',20,60);
+    return json(await saveGoalOpinion(id,body));
   }
   if (area === 'goals' && path.length === 2 && method === 'PATCH') {
     const body = await readBody();
