@@ -1,4 +1,4 @@
-import { authenticate, checkOrigin, cookie, exchange, exchangeOwner, isOwnerRequest, ownerOrigin, redis, sessionKey } from '../../../lib/auth';
+import { authenticate, checkOrigin, cookie, exchange, isPublicRequest, publicOrigin, redis, sessionKey } from '../../../lib/auth';
 import { feedbackLimit } from '../../../lib/contracts';
 import { isDate } from '../../../lib/date';
 import { HttpError, json } from '../../../lib/errors';
@@ -69,24 +69,18 @@ async function handler(request: Request, context: {params: Promise<{path: string
     const {path} = await context.params;
     const route = path.join('/');
     if (request.method !== 'GET') checkOrigin(request);
-    const owner = isOwnerRequest(request);
-    if (route === 'auth/owner' && request.method === 'POST') {
-      if (!owner) throw new HttpError(404, '요청한 페이지를 찾을 수 없습니다.');
-      const {password} = await readBody(request);
-      return json({ok:true}, 200, {'Set-Cookie':await exchangeOwner(password)});
-    }
+    const publicAccess = isPublicRequest(request);
     if (route === 'auth/link' && request.method === 'POST') {
-      if (owner) throw new HttpError(403, '소유자 비밀번호로 로그인해 주세요.');
       const {token} = await readBody(request);
       return json({ok:true}, 200, {'Set-Cookie':await exchange(token)});
     }
     if (route === 'auth/logout' && request.method === 'POST') {
       const key = sessionKey(request);
       if (key) await redis('DEL', key);
-      return json({ok:true}, 200, {'Set-Cookie':cookie('', 0, owner ? ownerOrigin : undefined)});
+      return json({ok:true}, 200, {'Set-Cookie':cookie('', 0, publicAccess ? publicOrigin : undefined)});
     }
 
-    await authenticate(request);
+    if (!publicAccess) await authenticate(request);
     if (route === 'meals' && request.method === 'GET') {
       const date = validDate(new URL(request.url).searchParams.get('date') ?? '');
       return json({date, meals:await mealsFor(date)});

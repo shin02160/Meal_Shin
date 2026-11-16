@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { scryptSync } from 'node:crypto';
 import { test } from 'node:test';
 import { GET, POST, PUT } from '../app/api/[...path]/route';
 import { digest } from '../lib/auth';
@@ -175,34 +174,28 @@ test('API integration with simulated Notion and Redis REST', async t => {
   const rotatedLogin = await api('auth/link','POST',{token:rotated});
   assert.equal(rotatedLogin.status, 200);
   cookie = rotatedLogin.headers.get('set-cookie')!.split(';')[0];
-  const ownerOrigin = 'https://mealshin-nine.vercel.app';
-  const ownerPassword = 'test-only owner password';
-  const salt = Buffer.alloc(16, 1);
-  const verifier = salt.toString('hex') + ':' + scryptSync(ownerPassword, salt, 32).toString('hex');
-  const ownerApi = (route: string, method = 'GET', data?: unknown, session = '') => {
-    const request = new Request(ownerOrigin + '/api/' + route, {
-      method, headers:{origin:ownerOrigin, cookie:session}, body:JSON.stringify(data),
+  const publicOrigin = 'https://mealshin-nine.vercel.app';
+  const publicApi = (route: string, method = 'GET', data?: unknown, requestOrigin = publicOrigin) => {
+    const request = new Request(publicOrigin + '/api/' + route, {
+      method, headers:{origin:requestOrigin}, body:JSON.stringify(data),
     });
     const context = {params:Promise.resolve({path:route.split('?')[0].split('/')})};
-    return (method === 'GET' ? GET : POST)(request, context);
+    return (method === 'GET' ? GET : PUT)(request, context);
   };
-  assert.equal((await ownerApi(mealsPath)).status, 401);
-  assert.equal((await ownerApi('auth/link', 'POST', {token:rotated})).status, 403);
-  assert.equal((await ownerApi('auth/owner', 'POST', {password:ownerPassword})).status, 503);
-  process.env.OWNER_PASSWORD_HASH = verifier;
-  assert.equal((await ownerApi(mealsPath, 'GET', undefined, cookie)).status, 401);
-  assert.equal((await ownerApi('auth/owner', 'POST', {password:'wrong'})).status, 403);
-  assert.equal((await api('auth/owner', 'POST', {password:ownerPassword})).status, 404);
-  const ownerLogin = await ownerApi('auth/owner', 'POST', {password:ownerPassword});
-  assert.equal(ownerLogin.status, 200);
-  assert.match(ownerLogin.headers.get('set-cookie')!, /Max-Age=2592000.*HttpOnly; SameSite=Lax; Secure/);
-  const ownerCookie = ownerLogin.headers.get('set-cookie')!.split(';')[0];
-  assert.equal((await ownerApi(mealsPath, 'GET', undefined, ownerCookie)).status, 200);
-  process.env.OWNER_PASSWORD_HASH = verifier.replace(/^./, '9');
-  assert.equal((await ownerApi(mealsPath, 'GET', undefined, ownerCookie)).status, 401);
-  process.env.OWNER_PASSWORD_HASH = verifier;
-  assert.equal((await ownerApi('auth/logout', 'POST', undefined, ownerCookie)).status, 200);
-  assert.equal((await ownerApi(mealsPath, 'GET', undefined, ownerCookie)).status, 401);
+  assert.equal((await api(mealsPath, 'GET', undefined, false)).status, 401);
+  unshare = false;
+  const publicMeals = await publicApi(mealsPath);
+  assert.equal(publicMeals.status, 200);
+  const publicData = await publicMeals.text();
+  assert(publicData.includes(mealId) && !publicData.includes('restricted') && !publicData.includes('TOP SECRET'));
+  assert.equal((await publicApi(mediaPath)).status, 200);
+  unshare = true;
+  assert.equal((await publicApi(mediaPath)).status, 404);
+  assert.equal((await publicApi(reviewsPath)).status, 409);
+  reviews.pop();
+  assert.equal((await publicApi(reviewsPath, 'PUT', {feedback:'외부 요청'}, 'https://other.test')).status, 403);
+  assert.equal((await publicApi(reviewsPath, 'PUT', {feedback:'공개 총평'})).status, 200);
+  assert.equal((await (await publicApi(reviewsPath)).json()).feedback, '공개 총평');
   redisState.delete('meal:session:' + digest(cookie.split('=')[1]));
   assert.equal((await api(mealsPath)).status, 401);
 });

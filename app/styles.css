@@ -60,6 +60,3 @@ textarea::placeholder { color:var(--muted); }
   .meal,.panel { padding:20px; }
   .photo { width:100px; height:100px; }
 }
-
-.owner-login label { display:block; margin:12px 0 4px; }
-.owner-login input { width:100%; min-height:44px; border:1px solid #a49aae; border-radius:12px; padding:8px 12px; }
