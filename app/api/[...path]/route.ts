@@ -1,5 +1,5 @@
 import { periodApi } from '../../../lib/period-api';
-import { authenticate, checkOrigin, cookie, exchange, isPublicRequest, publicOrigin, redis, sessionKey } from '../../../lib/auth';
+import { authenticate, checkOrigin, cookie, exchange, exchangeSitePassword, isPublicRequest, publicOrigin, redis, sessionKey } from '../../../lib/auth';
 import { feedbackLimit } from '../../../lib/contracts';
 import { isDate } from '../../../lib/date';
 import { HttpError, json } from '../../../lib/errors';
@@ -71,10 +71,11 @@ async function handler(request: Request, context: {params: Promise<{path: string
     const route = path.join('/');
     if (request.method !== 'GET') checkOrigin(request);
     const publicAccess = isPublicRequest(request);
-    if (publicAccess && (path[0] === 'reports' || path[0] === 'goals')) {
-      return await periodApi(request,path,() => readBody(request));
+    if (route === 'auth/password' && request.method === 'POST' && publicAccess) {
+      const {password} = await readBody(request);
+      return json({ok:true},200,{'Set-Cookie':await exchangeSitePassword(password)});
     }
-    if (route === 'auth/link' && request.method === 'POST') {
+    if (route === 'auth/link' && request.method === 'POST' && !publicAccess) {
       const {token} = await readBody(request);
       return json({ok:true}, 200, {'Set-Cookie':await exchange(token)});
     }
@@ -84,7 +85,10 @@ async function handler(request: Request, context: {params: Promise<{path: string
       return json({ok:true}, 200, {'Set-Cookie':cookie('', 0, publicAccess ? publicOrigin : undefined)});
     }
 
-    if (!publicAccess) await authenticate(request);
+    await authenticate(request);
+    if (publicAccess && (path[0] === 'reports' || path[0] === 'goals')) {
+      return await periodApi(request,path,() => readBody(request));
+    }
     if (route === 'meals' && request.method === 'GET') {
       const date = validDate(new URL(request.url).searchParams.get('date') ?? '');
       return json({date, meals:await mealsFor(date, true)});

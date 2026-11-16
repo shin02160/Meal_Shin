@@ -1,4 +1,5 @@
 'use client';
+import { useRouter } from 'next/navigation';
 import { ReviewNav } from './review-nav';
 
 import { useEffect, useRef, useState } from 'react';
@@ -74,11 +75,15 @@ function MealCard({meal}: {meal: Meal}) {
   </article>;
 }
 
-export function ReviewScreen({initialDate, publicAccess}: {initialDate: string; publicAccess: boolean}) {
+export function ReviewScreen({initialDate, publicAccess, nextView}: {initialDate: string; publicAccess: boolean; nextView?: 'weekly'|'monthly'|'goals'}) {
+  const router = useRouter();
   const [date, setDate] = useState(initialDate);
   const [revision, setRevision] = useState(0);
   const [day, setDay] = useState<Day | null>(null);
   const [drafts, setDrafts] = useState<Record<string,string>>({});
+  const [password,setPassword] = useState('');
+  const [loggingIn,setLoggingIn] = useState(false);
+  const [loginError,setLoginError] = useState('');
   const [phase, setPhase] = useState<'loading'|'ready'|'denied'|'error'>('loading');
   const [loadError, setLoadError] = useState('');
   const [saveError, setSaveError] = useState('');
@@ -178,6 +183,23 @@ export function ReviewScreen({initialDate, publicAccess}: {initialDate: string; 
     }
   }
 
+  async function login(event:React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!password || loggingIn) return;
+    setLoggingIn(true);
+    setLoginError('');
+    try {
+      await request('/auth/password',send('POST',{password}));
+      setPassword('');
+      if (nextView) router.replace('/review/' + nextView);
+      else reload();
+    } catch (error) {
+      setLoginError(message(error));
+    } finally {
+      setLoggingIn(false);
+    }
+  }
+
   async function logout() {
     setLoggingOut(true);
     setSaveError('');
@@ -197,13 +219,20 @@ export function ReviewScreen({initialDate, publicAccess}: {initialDate: string; 
   return <main>
     <header>
       <div className="top"><span className="brand">MEAL NOTE</span>
-        {!publicAccess && phase === 'ready' && <button className="quiet" disabled={saving || loggingOut} onClick={logout}>접속 종료</button>}
+        {phase === 'ready' && <button className="quiet" disabled={saving || loggingOut} onClick={logout}>접속 종료</button>}
       </div>
       <h1>하루 식단 리뷰</h1>
       <p>공유된 식단을 확인하고 하루 총평을 남겨주세요.</p>
     </header>
-    {publicAccess && <ReviewNav active="daily"/>}
-    {phase === 'denied' ? <section className="panel"><h2>접근할 수 없습니다</h2><p role="alert">{loadError}</p></section> :
+    {publicAccess && phase === 'ready' && <ReviewNav active="daily"/>}
+    {phase === 'denied' && publicAccess ? <form className="panel site-login" onSubmit={login}>
+      <h2>Meal Note 접속</h2>
+      <label htmlFor="site-password">접속 비밀번호</label>
+      <input id="site-password" type="password" autoComplete="current-password" maxLength={256}
+        value={password} onChange={event=>setPassword(event.target.value)} required/>
+      <button className="save" disabled={loggingIn || !password}>{loggingIn ? '확인 중…' : '접속'}</button>
+      {loginError && <p role="alert" className="error">{loginError}</p>}
+    </form> : phase === 'denied' ? <section className="panel"><h2>접근할 수 없습니다</h2><p role="alert">{loadError}</p></section> :
       <>
         <nav className="datebar" aria-label="리뷰 날짜 선택">
           <button aria-label="이전 날짜" disabled={saving || loggingOut || !date || date === '0001-01-01'} onClick={() => navigate(shiftDate(date, -1))}>‹</button>

@@ -1,3 +1,4 @@
+import { scryptSync } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GET, PATCH, POST } from '../app/api/[...path]/route';
@@ -46,7 +47,10 @@ function daily(id:string,date:string,status:string):Row {
 
 test('public period workflow verifies reports, Notion snapshots and goals with simulated upstreams', async t => {
   t.mock.timers.enable({apis:['Date'],now:new Date('2026-11-18T12:00:00Z')});
-  Object.assign(process.env,{
+  const password = 'fixture-site-password';
+  const salt = Buffer.alloc(16,1);
+  const passwordHash = salt.toString('hex') + ':' + scryptSync(password,salt,32).toString('hex');
+  Object.assign(process.env,{OWNER_PASSWORD_HASH:passwordHash,
     NOTION_TOKEN:'fake',NOTION_MEAL_LOG_DATA_SOURCE_ID:mealsId,NOTION_DAILY_REVIEW_DATA_SOURCE_ID:dailyId,
     NOTION_PERIOD_REVIEW_DATA_SOURCE_ID:reportsId,NOTION_IMPROVEMENT_TRACKER_DATA_SOURCE_ID:goalsId,
     AUTH_STORE_URL:'https://redis.test',AUTH_STORE_TOKEN:'fake',OPENAI_API_KEY:'fake',
@@ -80,8 +84,10 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
       const [command,a,b,c,d,e] = body;
       let result:unknown;
       if (command === 'SET') {
-        result = store.has(a) ? null : 'OK';
+        result = c === 'NX' && store.has(a) ? null : 'OK';
         if (result) store.set(a,b);
+      } else if (command === 'GET') {
+        result = store.get(a) ?? null;
       } else if (command === 'EVAL' && a.includes('INCR')) {
         result = Number(store.get(c) ?? 0) + 1;
         store.set(c,String(result));
@@ -156,8 +162,9 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
     if (options?.method === 'PATCH') row.properties = {...row.properties,...properties()};
     return Response.json(row);
   };
+  let siteCookie = '';
   function api(path:string,method = 'GET',body?:unknown,host = origin, requestOrigin=host) {
-    const request = new Request(host + '/api/' + path,{method,headers:{origin:requestOrigin},
+    const request = new Request(host + '/api/' + path,{method,headers:{origin:requestOrigin,cookie:host === origin ? siteCookie : ""},
       ...(body === undefined ? {} : {body:JSON.stringify(body)})});
     return (method === 'GET' ? GET : method === 'PATCH' ? PATCH : POST)(request,
       {params:Promise.resolve({path:path.split('?')[0].split('/')})});
@@ -170,6 +177,13 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   const resetRate = () => {for (const k of store.keys()) if (k.startsWith('meal:v12:rate:')) store.delete(k);};
 
   assert.equal((await api(weekPath,'GET',undefined,'https://instructor.test')).status,401);
+  assert.equal((await api(weekPath)).status,401);
+  assert.equal((await api('goals')).status,401);
+  assert.equal((await generate()).status,401);
+  assert.equal((await api('goals','POST',{})).status,401);
+  const login = await api('auth/password','POST',{password});
+  assert.equal(login.status,200);
+  siteCookie = login.headers.get('set-cookie')!.split(';')[0];
   const stats = (await (await api(weekPath)).json()).stats;
   assert.equal(stats.recordedDays,2);
   assert.equal(stats.mealCount,3);

@@ -80,3 +80,6 @@ textarea::placeholder { color:var(--muted); }
 .evidence a { font-size:13px; min-height:44px; display:inline-flex; align-items:center; }
 .report-copy { white-space:pre-wrap; }
 .skeleton { background:var(--alt); }
+
+.site-login { display:grid; gap:12px; }
+.site-login input { width:100%; min-height:44px; border:1px solid #a49aae; border-radius:12px; padding:8px 12px; }

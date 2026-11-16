@@ -1,3 +1,4 @@
+import { scryptSync } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { GET, POST, PUT } from '../app/api/[...path]/route';
@@ -174,16 +175,30 @@ test('API integration with simulated Notion and Redis REST', async t => {
   const rotatedLogin = await api('auth/link','POST',{token:rotated});
   assert.equal(rotatedLogin.status, 200);
   cookie = rotatedLogin.headers.get('set-cookie')!.split(';')[0];
+  const password = 'fixture-site-password';
+  const salt = Buffer.alloc(16,1);
+  const passwordHash = salt.toString('hex') + ':' + scryptSync(password,salt,32).toString('hex');
+  process.env.OWNER_PASSWORD_HASH = passwordHash;
+  let siteCookie = '';
   const publicOrigin = 'https://mealshin-nine.vercel.app';
   const publicApi = (route: string, method = 'GET', data?: unknown, requestOrigin = publicOrigin) => {
     const request = new Request(publicOrigin + '/api/' + route, {
-      method, headers:{origin:requestOrigin}, body:JSON.stringify(data),
+      method, headers:{origin:requestOrigin,cookie:siteCookie}, body:JSON.stringify(data),
     });
     const context = {params:Promise.resolve({path:route.split('?')[0].split('/')})};
-    return (method === 'GET' ? GET : PUT)(request, context);
+    return (method === 'GET' ? GET : method === 'PUT' ? PUT : POST)(request, context);
   };
   assert.equal((await api(mealsPath, 'GET', undefined, false)).status, 401);
   unshare = false;
+  assert.equal((await publicApi(mealsPath)).status,401);
+  assert.equal((await publicApi(mediaPath)).status,401);
+  assert.equal((await publicApi(reviewsPath,'PUT',{feedback:'비인가 요청'})).status,401);
+  assert.equal((await publicApi('auth/link','POST',{token:rotated})).status,401);
+  assert.equal((await publicApi('auth/password','POST',{password:'wrong'})).status,403);
+  const siteLogin = await publicApi('auth/password','POST',{password});
+  assert.equal(siteLogin.status,200);
+  assert.match(siteLogin.headers.get('set-cookie')!,/Max-Age=28800.*HttpOnly; SameSite=Lax; Secure/);
+  siteCookie = siteLogin.headers.get('set-cookie')!.split(';')[0];
   const publicMeals = await publicApi(mealsPath);
   assert.equal(publicMeals.status, 200);
   const publicData = await publicMeals.text();
@@ -196,6 +211,11 @@ test('API integration with simulated Notion and Redis REST', async t => {
   assert.equal((await publicApi(reviewsPath, 'PUT', {feedback:'외부 요청'}, 'https://other.test')).status, 403);
   assert.equal((await publicApi(reviewsPath, 'PUT', {feedback:'공개 총평'})).status, 200);
   assert.equal((await (await publicApi(reviewsPath)).json()).feedback, '공개 총평');
+  process.env.OWNER_PASSWORD_HASH = passwordHash.replace(/^./,'9');
+  assert.equal((await publicApi(mealsPath)).status,401);
+  process.env.OWNER_PASSWORD_HASH = passwordHash;
+  assert.equal((await publicApi('auth/logout','POST')).status,200);
+  assert.equal((await publicApi(mealsPath)).status,401);
   redisState.delete('meal:session:' + digest(cookie.split('=')[1]));
   assert.equal((await api(mealsPath)).status, 401);
 });
