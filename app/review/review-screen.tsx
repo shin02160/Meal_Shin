@@ -1,4 +1,5 @@
 'use client';
+import { ReviewNav } from './review-nav';
 
 import { useEffect, useRef, useState } from 'react';
 import { feedbackLimit, type Meal, type Review } from '../../lib/contracts';
@@ -200,6 +201,7 @@ export function ReviewScreen({initialDate, publicAccess}: {initialDate: string; 
       <h1>하루 식단 리뷰</h1>
       <p>공유된 식단을 확인하고 하루 총평을 남겨주세요.</p>
     </header>
+    {publicAccess && <ReviewNav active="daily"/>}
     {phase === 'denied' ? <section className="panel"><h2>접근할 수 없습니다</h2><p role="alert">{loadError}</p></section> :
       <>
         <nav className="datebar" aria-label="리뷰 날짜 선택">

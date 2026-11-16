@@ -39,8 +39,29 @@ Node.js 24와 npm을 사용합니다.
 - iPhone Safari에서 날짜 선택, 사진 보기, 키보드를 연 상태에서 총평 작성을 확인합니다.
 - 운영 도메인에서 인증과 만료를 확인한 뒤 강사용 링크를 발급합니다.
 
-이 구현에서 자동 테스트는 가상 Notion/Redis 응답을 사용합니다. 실제 운영 환경에는 배포하지 않았습니다. Notion 데이터 소스 쿼리는 [공식 API 문서](https://developers.notion.com/reference/query-a-data-source)의 2026-03-11 버전을 사용합니다.
+이 구현에서 자동 테스트는 가상 Notion/Redis 응답을 사용합니다. Notion 데이터 소스 쿼리는 [공식 API 문서](https://developers.notion.com/reference/query-a-data-source)의 2026-03-11 버전을 사용합니다.
 
 ## 운영 주소에서 공개 리뷰
 
 mealshin-nine.vercel.app에서는 누구나 Notion에서 공유한 식단과 사진을 열람하고 하루 총평을 작성하거나 수정할 수 있습니다. 다른 배포 주소의 강사 링크는 강사용 APP_ORIGIN에서 사용합니다.
+
+## v1.2 주간·월간 리뷰
+
+공개 운영 주소의 일별 화면에 주간, 월간, 개선 목표 메뉴가 있습니다. 공유 식단이 있는 기간에서 AI 초안을 생성하고, 내용을 저장한 뒤 명시적으로 확정할 수 있습니다. 재분석은 Notion에 새 버전을 만들며 이전 확정본을 보존합니다. 이전 원본이 공유 해제되면 그 원본을 사용한 리포트와 목표의 내용은 공개 응답에서 제외됩니다.
+
+배포 환경에 기존 Notion·Redis 설정과 함께 다음 값을 설정합니다.
+
+| 환경 변수 | 용도 |
+| --- | --- |
+| NOTION_PERIOD_REVIEW_DATA_SOURCE_ID | 기존 Period Review 데이터 소스 ID. .env.example 참조 |
+| NOTION_IMPROVEMENT_TRACKER_DATA_SOURCE_ID | 기존 Improvement Tracker 데이터 소스 ID. .env.example 참조 |
+| OPENAI_API_KEY | 서버에서 초안을 생성할 때 사용하는 API 키 |
+| MEAL_AI_MODEL | 계정에서 사용할 수 있는 Structured Outputs 지원 모델 |
+
+Notion 통합은 기존 Meal Log·Daily Review를 계속 사용하며 Period Review·Improvement Tracker를 읽고 생성·수정할 수 있어야 합니다. v1.2 업그레이드에는 기존 행의 이동이나 스키마 수정이 필요하지 않습니다.
+
+확정된 리포트에서 AI 제안을 개선 목표에 추가하고, 목표 화면에서 승인합니다. 다음 기간 AI 입력에는 기간 시작 전에 승인된 진행중·유지 목표만 들어갑니다. 월간 통계는 일별 원본에서 계산하며, 월에 완전히 포함되고 원본이 최신 상태인 확정 주간 리포트를 추세 참고에 사용합니다.
+
+공개 URL의 방문자는 리포트와 목표를 검토·수정할 수 있습니다. 확정과 목표 이력에는 행위자가 anonymous로 기록됩니다. v1.2 쓰기는 요청 제한을 적용하며, Redis 잠금과 수정 토큰으로 충돌을 감지합니다. Notion 생성이 성공했는지 알 수 없는 경우 같은 버전의 재생성을 차단합니다. 운영자가 Notion에서 생성 여부를 확인하고, 실패가 확실할 때 해당 meal:v12:create 키만 정리할 수 있습니다.
+
+AI 분석은 수동 생성으로 제공됩니다. 기간 종료 후 자동 생성 스케줄은 운영 설정을 확정한 뒤 연결할 수 있습니다.

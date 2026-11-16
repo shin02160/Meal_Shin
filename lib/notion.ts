@@ -4,13 +4,13 @@ import type { Meal, Review } from './contracts';
 
 type RichText = {plain_text: string};
 type Photo = {type: string; file?: {url: string}};
-type Property = {
+export type Property = {
   id?: string; type?: string; title?: RichText[]; rich_text?: RichText[];
   date?: {start: string} | null; select?: {name: string} | null;
-  checkbox?: boolean; files?: Photo[];
+  checkbox?: boolean; files?: Photo[]; number?: number | null; relation?: {id:string}[];
   formula?: {type: string; string?: string | null; number?: number | null};
 };
-type Page = {id: string; properties: Record<string, Property>};
+export type Page = {id: string; last_edited_time?: string; properties: Record<string, Property>};
 type Query = {results: Page[]; next_cursor: string | null};
 export const mealFields = {
   '기록명':'title', '식사 시작':'date', '식사 종료':'date', '식사 소요시간':'formula',
@@ -46,7 +46,7 @@ export async function notion<T>(path: string, method = 'GET', data?: unknown): P
   }
 }
 
-async function query(source: string, fields: Record<string,string>, filter: unknown, limit = Infinity) {
+export async function queryNotion(source: string, fields: Record<string,string>, filter: unknown, limit = Infinity) {
   const params = new URLSearchParams();
   for (const field of Object.keys(fields)) params.append('filter_properties', field);
   const pages: Page[] = [];
@@ -100,7 +100,7 @@ export function projectMeals(pages: Page[], date: string): Meal[] {
 
 export async function mealsFor(date: string) {
   const [from, to] = dateBounds(date);
-  const pages = await query(mealSource(), mealFields, {and: [
+  const pages = await queryNotion(mealSource(), mealFields, {and: [
     {property:'공유 여부', checkbox:{equals:true}},
     {property:'식사 시작', date:{on_or_after:from}},
     {property:'식사 시작', date:{before:to}},
@@ -118,7 +118,7 @@ export async function photoFor(date: string, id: string, index: number) {
 }
 
 export async function reviewPage(date: string) {
-  const pages = await query(reviewSource(), reviewFields, {property:'리뷰 날짜', date:{equals:date}}, 2);
+  const pages = await queryNotion(reviewSource(), reviewFields, {property:'리뷰 날짜', date:{equals:date}}, 2);
   if (pages.length > 1) throw new HttpError(409, '이 날짜에 총평이 중복되어 있습니다. 기록 관리자에게 문의해 주세요.');
   return pages[0];
 }

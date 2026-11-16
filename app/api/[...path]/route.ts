@@ -1,3 +1,4 @@
+import { periodApi } from '../../../lib/period-api';
 import { authenticate, checkOrigin, cookie, exchange, isPublicRequest, publicOrigin, redis, sessionKey } from '../../../lib/auth';
 import { feedbackLimit } from '../../../lib/contracts';
 import { isDate } from '../../../lib/date';
@@ -70,6 +71,9 @@ async function handler(request: Request, context: {params: Promise<{path: string
     const route = path.join('/');
     if (request.method !== 'GET') checkOrigin(request);
     const publicAccess = isPublicRequest(request);
+    if (publicAccess && (path[0] === 'reports' || path[0] === 'goals')) {
+      return await periodApi(request,path,() => readBody(request));
+    }
     if (route === 'auth/link' && request.method === 'POST') {
       const {token} = await readBody(request);
       return json({ok:true}, 200, {'Set-Cookie':await exchange(token)});
@@ -105,4 +109,4 @@ async function handler(request: Request, context: {params: Promise<{path: string
     return json({error:'요청을 처리할 수 없습니다. 잠시 후 다시 시도해 주세요.'}, 503);
   }
 }
-export {handler as GET, handler as POST, handler as PUT};
+export {handler as GET, handler as POST, handler as PUT, handler as PATCH};
