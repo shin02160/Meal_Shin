@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { redis } from './auth';
-import { HttpError, required } from './errors';
+import { HttpError } from './errors';
 import { NotionError, notion, queryNotion, text, type Page } from './notion';
 import { periodFor, type Period } from './period';
 import type { Goal, ReportVersion } from './report-contracts';
 
-const reports = () => required('NOTION_PERIOD_REVIEW_DATA_SOURCE_ID');
-const goals = () => required('NOTION_IMPROVEMENT_TRACKER_DATA_SOURCE_ID');
+const reports = () => process.env.NOTION_PERIOD_REVIEW_DATA_SOURCE_ID || '41a6d8c5-8de1-813a-aa10-000ba10028e9';
+const goals = () => process.env.NOTION_IMPROVEMENT_TRACKER_DATA_SOURCE_ID || '41a6d8c5-8de1-81f4-ad1a-000b48430769';
 export const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 export const race = () => new HttpError(409, '다른 요청이 먼저 처리됐습니다. 새로고침 후 다시 시도해 주세요.');
 const release = "if redis.call('GET',KEYS[1])==ARGV[1] then return redis.call('DEL',KEYS[1]) end return 0";
