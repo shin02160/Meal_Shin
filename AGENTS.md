@@ -4,7 +4,7 @@ You are implementing an MVP for one diary owner and one Pilates instructor. Use 
 
 **Hard constraints**
 - Food entries are CREATED/EDITED/DELETED in Notion ONLY. No meal-write endpoints or client meal-entry form.
-- Instructor sees only records with `공유 여부 = true`. The server must project only approved fields, never send `식사 메모` or other private properties.
+- Daily review exposes only records with 공유 여부 = true. Include 식사 메모 for those records on the daily screen. Exclude 식사 메모 from weekly and monthly analysis and AI input.
 - One daily feedback per KST calendar day; editing replaces the existing review, not a new row.
 - Instructor access is via revocable secret link, no username/password login in MVP. Treat link as bearer credential. Token and Notion API credentials never appear in logs, analytics, response payloads or source control.
 - Do not recreate or rename existing Notion DBs/columns without explicit approval. Existing Meal Log has `식사 시작`, `식사 종료`, `식사 소요시간` formula; Daily Review is already created.

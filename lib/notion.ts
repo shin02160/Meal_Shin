@@ -78,7 +78,7 @@ export function imageUrl(photo?: Photo): URL | null {
   return null;
 }
 
-export function projectMeals(pages: Page[], date: string): Meal[] {
+export function projectMeals(pages: Page[], date: string, includeMealNote = false): Meal[] {
   return pages.filter(page => isSharedOn(page, date)).map(({id, properties: p}) => {
     const startAt = p['식사 시작'].date!.start;
     const rawEnd = p['식사 종료']?.date?.start;
@@ -92,20 +92,21 @@ export function projectMeals(pages: Page[], date: string): Meal[] {
       id, title: text(p['기록명']?.title), category: p['식사 구분']?.select?.name ?? '',
       startAt, endAt, durationMinutes, displayDuration, foods: text(p['음식 내용']?.rich_text),
       sharedNote: text(p['공유 메모']?.rich_text),
+      ...(includeMealNote ? {mealNote:text(p['식사 메모']?.rich_text)} : {}),
       images: (p['식단 사진']?.files ?? []).flatMap((photo, index) =>
         imageUrl(photo) ? ['/api/media/' + date + '/' + encodeURIComponent(id) + '/' + index] : []),
     };
   }).sort((left, right) => timestamp(left.startAt) - timestamp(right.startAt));
 }
 
-export async function mealsFor(date: string) {
+export async function mealsFor(date: string, includeMealNote = false) {
   const [from, to] = dateBounds(date);
-  const pages = await queryNotion(mealSource(), mealFields, {and: [
+  const pages = await queryNotion(mealSource(), includeMealNote ? {...mealFields, '식사 메모':'rich_text'} : mealFields, {and: [
     {property:'공유 여부', checkbox:{equals:true}},
     {property:'식사 시작', date:{on_or_after:from}},
     {property:'식사 시작', date:{before:to}},
   ]});
-  return projectMeals(pages, date);
+  return projectMeals(pages, date, includeMealNote);
 }
 
 export async function photoFor(date: string, id: string, index: number) {

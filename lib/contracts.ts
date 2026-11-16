@@ -8,6 +8,7 @@ export type Meal = {
   displayDuration: string;
   foods: string;
   sharedNote: string;
+  mealNote?: string;
   images: string[];
 };
 export type Review = {

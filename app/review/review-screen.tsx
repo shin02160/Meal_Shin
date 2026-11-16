@@ -68,6 +68,7 @@ function MealCard({meal}: {meal: Meal}) {
       <h3>{meal.title || meal.category || '식단'}</h3>
       {meal.foods && <p>{meal.foods}</p>}
       {meal.sharedNote && <p className="shared-note">{meal.sharedNote}</p>}
+      {meal.mealNote?.trim() && <p className="shared-note"><strong>식사 메모</strong><br/>{meal.mealNote}</p>}
     </div>
     <PhotoGallery meal={meal}/>
   </article>;

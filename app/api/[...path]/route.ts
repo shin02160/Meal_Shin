@@ -87,7 +87,7 @@ async function handler(request: Request, context: {params: Promise<{path: string
     if (!publicAccess) await authenticate(request);
     if (route === 'meals' && request.method === 'GET') {
       const date = validDate(new URL(request.url).searchParams.get('date') ?? '');
-      return json({date, meals:await mealsFor(date)});
+      return json({date, meals:await mealsFor(date, true)});
     }
     if (path[0] === 'reviews' && path.length === 2) {
       const date = validDate(path[1]);

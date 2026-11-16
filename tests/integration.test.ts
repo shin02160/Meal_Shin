@@ -17,7 +17,7 @@ const rich = (plain_text: string) => [{plain_text}];
 function meal(id: string, start: string, shared: boolean, end?: string) {
   return {id, parent:{data_source_id:mealSource}, properties:{
     '기록명':{title:rich('가상 식단')}, '식사 시작':{date:{start}}, '식사 종료':{date:end ? {start:end} : null},
-    '공유 여부':{checkbox:shared}, '식사 메모':{rich_text:rich('TOP SECRET')}, '공유 메모':{rich_text:rich('공개 메모')},
+    '공유 여부':{checkbox:shared}, '식사 메모':{rich_text:rich('식사 메모 ' + id)}, '공유 메모':{rich_text:rich('공개 메모')},
     '식단 사진':{files:[{type:'file',file:{url:image}},{type:'file',file:{url:'https://evil.test/photo'}}]},
   }};
 }
@@ -85,7 +85,6 @@ test('API integration with simulated Notion and Redis REST', async t => {
     assert.equal(url.hostname, 'api.notion.com');
     notionRequests++;
     if (url.pathname.includes(mealSource)) {
-      assert(!url.searchParams.getAll('filter_properties').includes('식사 메모'));
       assert.deepEqual(body.filter.and[0], {property:'공유 여부',checkbox:{equals:true}});
       assert.equal(body.filter.and[1].date.on_or_after, dateBounds(date)[0]);
       assert.equal(body.filter.and[2].date.before, dateBounds(date)[1]);
@@ -135,9 +134,10 @@ test('API integration with simulated Notion and Redis REST', async t => {
   const response = await api(mealsPath);
   assert.equal(response.headers.get('cache-control'), 'private, no-store');
   const raw = await response.text();
-  assert(!raw.includes('TOP SECRET') && !raw.includes('signature') && !raw.includes('evil.test'));
+  assert(!raw.includes('식사 메모 restricted') && !raw.includes('signature') && !raw.includes('evil.test'));
   const {meals} = JSON.parse(raw);
   assert.deepEqual(meals.map((row: {id:string}) => row.id), [mealId, 'late']);
+  assert.equal(meals[0].mealNote,'식사 메모 ' + mealId);
   assert.equal(meals[0].displayDuration, '');
   assert.equal(meals[1].displayDuration, '시간 확인 필요');
   assert.deepEqual(meals[0].images, ['/api/' + mediaPath]);
@@ -187,7 +187,7 @@ test('API integration with simulated Notion and Redis REST', async t => {
   const publicMeals = await publicApi(mealsPath);
   assert.equal(publicMeals.status, 200);
   const publicData = await publicMeals.text();
-  assert(publicData.includes(mealId) && !publicData.includes('restricted') && !publicData.includes('TOP SECRET'));
+  assert(publicData.includes(mealId) && !publicData.includes('restricted') && publicData.includes('식사 메모 ' + mealId));
   assert.equal((await publicApi(mediaPath)).status, 200);
   unshare = true;
   assert.equal((await publicApi(mediaPath)).status, 404);
