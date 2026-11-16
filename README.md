@@ -40,3 +40,9 @@ Node.js 24와 npm을 사용합니다.
 - 운영 도메인에서 인증과 만료를 확인한 뒤 강사용 링크를 발급합니다.
 
 이 구현에서 자동 테스트는 가상 Notion/Redis 응답을 사용합니다. 실제 운영 환경에는 배포하지 않았습니다. Notion 데이터 소스 쿼리는 [공식 API 문서](https://developers.notion.com/reference/query-a-data-source)의 2026-03-11 버전을 사용합니다.
+
+## 운영 주소에서 소유자 로그인
+
+mealshin-nine.vercel.app은 소유자 비밀번호로 접속합니다. 신뢰하는 로컬 터미널에서 node scripts/owner-password.mjs를 실행하고, 출력된 소유자 비밀번호는 본인의 비밀번호 관리자에 보관하세요. OWNER_PASSWORD_HASH에 표시된 값만 Vercel의 meal_shin 프로젝트에서 Production 환경 변수로 등록한 뒤 재배포합니다. 인증 및 리뷰 기능에는 기존 Redis와 Notion 환경 변수도 필요합니다.
+
+같은 브라우저의 로그인은 30일 동안 유지됩니다. 로그아웃하거나 환경 변수에 새 해시를 적용하면 이전 세션은 만료됩니다. 강사 링크는 APP_ORIGIN에 별도로 설정한 강사용 주소에서 사용합니다.
