@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { goalStates, type Goal, type ReportView } from '../../../lib/report-contracts';
 import { periodKey, type PeriodType } from '../../../lib/period';
+import type { DashboardRange, GoalDashboard } from '../../../lib/goal-dashboard';
 import { call, errorText } from './api';
+import { GoalDashboardSummary, GoalDashboardTrends } from './goal-dashboard-summary';
 import { RecentGoalAssessment } from './recent-goal-assessment';
 import { GoalProgressCard, useProgressSummary } from './progress-screen';
 
@@ -96,7 +98,20 @@ export function GoalsScreen({today}:{today:string}) {
   const [error,setError] = useState('');
   const [refresh,setRefresh] = useState(0);
   const [progressVersion,setProgressVersion] = useState(0);
-  const progress = useProgressSummary('weekly',periodKey('weekly',today),progressVersion,true);
+  const [range,setRange] = useState<DashboardRange>('week');
+  const [dashboardRetry,setDashboardRetry] = useState(0);
+  const [result,setResult] = useState<{key:string;data?:GoalDashboard;error?:string}>();
+  const dashboardKey = [range,progressVersion,dashboardRetry].join(':');
+  const dashboard = result?.key === dashboardKey ? result : undefined;
+  const progress = useProgressSummary('weekly',periodKey('weekly',today),progressVersion,selected !== null);
+  useEffect(()=>{
+    if (selected !== null) return;
+    const controller = new AbortController();
+    call<GoalDashboard>('goals/dashboard?range='+range,'GET',undefined,controller.signal)
+      .then(data=>{if (!controller.signal.aborted) setResult({key:dashboardKey,data});})
+      .catch(reason=>{if (!controller.signal.aborted) setResult({key:dashboardKey,error:errorText(reason)});});
+    return ()=>controller.abort();
+  },[dashboardKey,range,selected]);
   useEffect(()=>{
     const controller = new AbortController();
     call<Goal[]>('goals','GET',undefined,controller.signal).then(items=>{if (!controller.signal.aborted) setGoals(items);})
@@ -117,6 +132,20 @@ export function GoalsScreen({today}:{today:string}) {
   </div>;
   const visible = goals.filter(goal=>filter === '전체' || goal.status === filter);
   return <div className="period-stack" id="goal-list">
+    <div className="goal-list-filter"><label htmlFor="goal-dashboard-range">집계 기간</label>
+      <select id="goal-dashboard-range" value={range} onChange={event=>{
+        setRange(event.target.value as DashboardRange);setDashboardRetry(value=>value+1);
+      }}>
+        <option value="week">이번 주</option><option value="month">이번 달</option><option value="quarter">최근 3개월</option>
+      </select>
+    </div>
+    {!dashboard && <p className="panel skeleton" role="status">개선 목표 현황을 불러오는 중입니다.</p>}
+    {dashboard?.error && <section className="panel">
+      <p className="error" role="alert">{dashboard.error}</p>
+      <button onClick={()=>setDashboardRetry(value=>value+1)}>현황 다시 불러오기</button>
+    </section>}
+    {dashboard?.data && <GoalDashboardSummary data={dashboard.data}/>}
+    <h2>목표별 현황</h2>
     <div className="goal-list-filter"><label htmlFor="goal-filter">상태</label>
       <select id="goal-filter" value={filter} onChange={event=>setFilter(event.target.value)}>
         {['전체',...goalStates].map(state=><option key={state}>{state}</option>)}
@@ -124,17 +153,17 @@ export function GoalsScreen({today}:{today:string}) {
     </div>
     {!visible.length && <p className="panel">이 상태에 해당하는 목표가 없습니다.</p>}
     {visible.map(goal=>{
-      const entry=progress.items?.find(item=>item.goalId===goal.id);
-      const stats=entry?.summary;
-      const recent=entry?.latest;
-      const days=stats ? stats.achieved+stats.partial+stats.missed : 0;
+      const entry=dashboard?.data?.entries.find(item=>item.goalId===goal.id);
+      const stats=entry?.totals;
       return <article key={goal.id} className="panel goal-list-card">
         <div className="section-heading"><h2>{goal.title}</h2><span className="pill">{goal.status}</span></div>
-        <p>이번 주 · {stats?.rate != null ? '평가 '+days+'일 / 달성률 '+stats.rate+'%' : '평가 데이터 없음'}</p>
-        <RecentGoalAssessment assessment={recent}/>
-        {progress.error && <p className="error" role="alert">{progress.error}</p>}
+        {entry && stats && <>
+          <p>선택 기간 · 평가 {stats.evaluated}건 · 달성률 {stats.rate === null ? '—' : stats.rate+'%'} · 판단불가 {stats.unknown}건</p>
+          <RecentGoalAssessment assessment={entry.latest}/>
+        </>}
         <button className="save" onClick={()=>setSelected(goal.id)} aria-label={goal.title+' 달성 기록 관리'}>달성 기록 관리</button>
       </article>;
     })}
+    {dashboard?.data && <GoalDashboardTrends data={dashboard.data}/>}
   </div>;
 }

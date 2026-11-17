@@ -7,15 +7,16 @@ import type { Goal } from '../../../lib/report-contracts';
 import type { PeriodType } from '../../../lib/period';
 import { call,errorText } from './api';
 
-export function useProgressSummary(type:PeriodType,key:string,version=0,latest=false):{items?:GoalProgressSummary[];error?:string} {
+export function useProgressSummary(type:PeriodType,key:string,version=0,enabled=true):{items?:GoalProgressSummary[];error?:string} {
   const [result,setResult] = useState<{key:string;items?:GoalProgressSummary[];error?:string}>();
   useEffect(()=>{
+    if (!enabled) return;
     const controller = new AbortController();
-    call<GoalProgressSummary[]>('goals/progress-summary?type='+type+'&key='+key+(latest?'&latest=1':''),'GET',undefined,controller.signal)
+    call<GoalProgressSummary[]>('goals/progress-summary?type='+type+'&key='+key,'GET',undefined,controller.signal)
       .then(items=>{if (!controller.signal.aborted) setResult({key,items});})
       .catch(error=>{if (!controller.signal.aborted) setResult({key,error:errorText(error)});});
     return ()=>controller.abort();
-  },[type,key,version,latest]);
+  },[type,key,version,enabled]);
   return result?.key === key ? result : {};
 }
 function Counts({summary,onSelectDay}:{summary:ProgressSummary;onSelectDay?:(day:string)=>void}) {
@@ -33,18 +34,6 @@ function Counts({summary,onSelectDay}:{summary:ProgressSummary;onSelectDay?:(day
       })}
     </ul></details>
   </>;
-}
-export function PeriodProgress({type,periodKey}:{type:PeriodType;periodKey:string}) {
-  const {items,error}=useProgressSummary(type,periodKey);
-  return <section className="panel">
-    <h2>개선 목표 실천 현황</h2>
-    {error && <p role="alert" className="error">{error}</p>}
-    {!items && !error && <p role="status">실천 현황을 불러오는 중입니다.</p>}
-    {items && !items.some(item=>item.summary.eligible) && <p>집계할 목표가 없습니다.</p>}
-    {items?.filter(item=>item.summary.eligible).map(item=><div key={item.goalId}>
-      <h3>{item.title}</h3><Counts summary={item.summary}/>
-    </div>)}
-  </section>;
 }
 export function GoalProgressCard({goal,today,summary,summaryError,onSaved}:{
   goal:Goal;today:string;summary?:ProgressSummary;summaryError?:string;onSaved:()=>void;

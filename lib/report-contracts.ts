@@ -21,4 +21,4 @@ export type Goal = {
   evaluation:string; evaluatedAt:string; history:GoalEvent[];
 };
 export type GoalEvent = {revision?:string; legacy?:true; opinion?:string; at:string; status:string; approved:boolean; evaluation:string; reportId:string; actor:'anonymous'};
-export type ReportView = {period:Period; stats:PeriodInput['stats']; current:ReportVersion|null; final:ReportVersion|null; needsReview:boolean; currentStale:boolean; historyId?:string; daily:PeriodInput['daily']};
+export type ReportView = {period:Period; stats:PeriodInput['stats']; current:ReportVersion|null; final:ReportVersion|null; analysis:ReportVersion|null; needsReview:boolean; currentStale:boolean; historyId?:string; daily:PeriodInput['daily']};

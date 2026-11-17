@@ -34,8 +34,16 @@ export async function readPeriod(period: Period) {
   const [showCurrent,showFinal] = await Promise.all([
     current && visible(current,period,input), final && visible(final,period,input),
   ]);
-  return {period,stats:input.stats,daily:input.daily,historyId:final?.id,
-    needsReview:!!(current && !showCurrent || final && !showFinal) || [current,final].some(row => row && row.fingerprint !== input.fingerprint),
+  let analysis:ReportVersion|null = null;
+  for (const row of rows) {
+    if (!row.draft) continue;
+    if (row === current ? showCurrent : row === final ? showFinal : await visible(row,period,input)) {
+      analysis = row;
+      break;
+    }
+  }
+  return {period,stats:input.stats,daily:input.daily,analysis,historyId:final?.id,
+    needsReview:!!(current && !showCurrent || final && !showFinal) || [current,final,analysis].some(row => row && row.fingerprint !== input.fingerprint),
     currentStale:!!current && current.fingerprint !== input.fingerprint,
     current:showCurrent ? current : null,
     final:showFinal ? final : null,
@@ -87,10 +95,19 @@ async function visibleGoal(goal:Goal, visible:ReturnType<typeof makeVisibilityCh
     !event.reportId || await visible(event.reportId) ? event : null))).filter(event => event !== null);
   return {...goal,history,evaluation:history.filter(event=>event.opinion === undefined).at(-1)?.evaluation ?? ''};
 }
-export async function publicGoals() {
+export async function publicGoalTimelines() {
   const visible = makeVisibilityCheck();
-  const safe = await Promise.all((await listGoals()).map(goal=>visibleGoal(goal,visible)));
-  return safe.filter(goal=>goal !== null);
+  const entries = await Promise.all((await listGoals()).map(async original=>{
+    const goal = await visibleGoal(original,visible);
+    if (!goal) return null;
+    const statusEvents = (row:Goal) => row.history.filter(event=>event.opinion === undefined).length;
+    return {goal,complete:statusEvents(goal)===statusEvents(original)};
+  }));
+  return entries.filter(entry=>entry !== null);
+}
+
+export async function publicGoals() {
+  return (await publicGoalTimelines()).map(({goal})=>goal);
 }
 
 export async function generatePeriod(period: Period, regenerate: boolean, expectedVersion: unknown) {

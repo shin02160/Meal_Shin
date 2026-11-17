@@ -270,6 +270,15 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   assert.deepEqual(progressDraft.mealIds,[]);
   assert.equal(progressDraft.evidence,'가상 기록 근거');
   assert.equal(rows[progressId].length,1);
+  const dashboardPath = 'goals/dashboard?range=week';
+  assert.equal((await api('goals/dashboard?range=invalid')).status,400);
+  const unconfirmedDashboard = await (await api(dashboardPath)).json();
+  assert.equal(unconfirmedDashboard.totals.partial,1);
+  assert.equal(unconfirmedDashboard.totals.evaluated,1);
+  assert.equal(unconfirmedDashboard.entries[0].latest.confirmed,false);
+  const monthDashboard = await (await api('goals/dashboard?range=month')).json();
+  assert.equal(monthDashboard.start,'2026-11-01');
+  assert.equal(monthDashboard.end,'2026-11-18');
   const {record:progressFinal} = await (await saveProgress('confirm',progressDraft.revision,{status:'달성'})).json();
   assert.equal(progressFinal.status,'부분달성');
   assert.equal(progressFinal.confirmed,true);
@@ -288,6 +297,9 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   const tea = rows[mealsId].find(item=>item.id==='tea')!;
   tea.properties['공유 여부']={checkbox:false};
   assert.equal((await api(progressPath+'?day='+progressDay)).status,404);
+  const privateDashboard = await (await api(dashboardPath)).json();
+  assert.equal(privateDashboard.totals.partial,0);
+  assert.equal(privateDashboard.entries[0]?.latest ?? null,null);
   tea.properties['공유 여부']={checkbox:true};
   const emptyProgressPath = progressPath+'?day=2026-11-17';
   const empty = await api(progressPath,'POST',{day:'2026-11-17',action:'save',status:'미달성'});
@@ -307,6 +319,7 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   rows[progressId].push(duplicate);
   assert.equal((await (await api(progressSummary)).json())[0].summary.partial,1);
   assert.equal((await api(progressPath+'?day='+progressDay)).status,409);
+  assert.equal((await (await api(dashboardPath)).json()).totals.partial,1);
   rows[progressId].pop();
 
   const month = await generate(false,0,'monthly','2026-11');
@@ -329,6 +342,7 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   const reopened = await (await api(weekPath)).json();
   assert.equal(reopened.currentStale,false);
   assert.equal(reopened.final.feedback,'확정 내용');
+  assert.equal(reopened.analysis.id,newDraft.id);
   const confirmationRace = await Promise.all([edit(newDraft,'두 번째 확정',true),edit(newDraft,'오래된 화면의 초안')]);
   assert.deepEqual(confirmationRace.map(response=>response.status),[200,409]);
   const history = await (await api('reports/'+final.id+'/history')).json();
@@ -342,6 +356,7 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   const hidden = await (await api(weekPath)).json();
   assert.equal(hidden.final,null);
   assert.equal(hidden.current,null);
+  assert.equal(hidden.analysis,null);
   const hiddenHistory = await (await api('reports/'+final.id+'/history')).json();
   assert(hiddenHistory.every((row:{hidden:boolean})=>row.hidden));
   assert(!JSON.stringify(hiddenHistory).includes('확정 내용'));

@@ -3,7 +3,7 @@ import { timestamp } from './date';
 import { mealFields, mealSource, projectMeals, queryNotion, reviewFields, reviewSource, text } from './notion';
 import { kstDate, periodKey, type Period } from './period';
 
-export async function collectPeriod(period: Period) {
+export async function collectPeriod(period: Pick<Period, 'start' | 'until'>) {
   const dateFilter = (property: string, start: string, until: string) => [
     {property, date:{on_or_after:start}}, {property, date:{before:until}},
   ];

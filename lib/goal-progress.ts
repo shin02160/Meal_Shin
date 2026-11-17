@@ -2,10 +2,11 @@ import { redis } from './auth';
 import { randomUUID } from 'node:crypto';
 import { collectPeriod } from './analysis-input';
 import { isDate, shiftDate } from './date';
+import { assessmentTotals, dashboardPeriods, unrecordedDays, type DashboardRange, type GoalDashboard } from './goal-dashboard';
 import { HttpError, required } from './errors';
 import { mealsFor, notion, queryNotion, text, type Page } from './notion';
 import { kstDate, type Period } from './period';
-import { publicGoals } from './period-reviews';
+import { publicGoals, publicGoalTimelines } from './period-reviews';
 import { progressDraft } from './progress-ai';
 import { progressStates, type Progress, type ProgressState, type ProgressSummary } from './progress-contracts';
 import type { Goal } from './report-contracts';
@@ -222,8 +223,8 @@ export function summarizeProgress(goal:Goal,period:Period,records:Progress[],tod
   return {...counts,days,rate:denominator ? Math.round(counts.achieved/denominator*1000)/10 : null,lastDay};
 }
 
-export async function summarizeGoals(period:Period,today:string,includeLatest=false) {
-  const [goals,input,pages] = await Promise.all([publicGoals(),collectPeriod(period),queryNotion(source(),progressFields,includeLatest ? undefined : {and:[
+async function loadGoalProgress(period:Pick<Period,'start'|'until'>,today:string,includeLatest:boolean) {
+  const [timelines,input,pages] = await Promise.all([publicGoalTimelines(),collectPeriod(period),queryNotion(source(),progressFields,includeLatest ? undefined : {and:[
     {property:'평가 날짜',date:{on_or_after:period.start}},{property:'평가 날짜',date:{before:period.until}},]})]);
   const mealsByDay = new Map<string,Set<string>>();
   for (const meal of input.meals) {
@@ -232,6 +233,8 @@ export async function summarizeGoals(period:Period,today:string,includeLatest=fa
     mealsByDay.set(meal.date,ids);
   }
   const grouped = new Map<string,Progress[]>();
+  const visibleRecords = new Map<string,Progress[]>();
+  let duplicates = 0;
   const considered = new Map<string,{page:Page;entry:Entry}>();
   for (const page of pages) {
     const entry = decode(page);
@@ -239,10 +242,12 @@ export async function summarizeGoals(period:Period,today:string,includeLatest=fa
     if (!isDate(day) || day > today) continue;
     const key=goalId+':'+day;
     const previous = considered.get(key)?.page;
+    if (previous) duplicates++;
     if (!previous || [page.last_edited_time ?? '',page.id].join(':') > [previous.last_edited_time ?? '',previous.id].join(':')) {
       considered.set(key,{page,entry});
     }
   }
+  if (duplicates) console.warn('Duplicate goal progress records:', duplicates);
   const latest = new Map<string,Entry[]>();
   for (const {entry} of considered.values()) {
     const {goalId,day}=entry.record;
@@ -255,6 +260,9 @@ export async function summarizeGoals(period:Period,today:string,includeLatest=fa
     const mealIds=mealsByDay.get(day) ?? new Set<string>();
     const record=safeRecord(entry,mealIds);
     if(record) {
+      const visible = visibleRecords.get(goalId) ?? [];
+      visible.push(record);
+      visibleRecords.set(goalId,visible);
       const records=grouped.get(goalId) ?? [];
       const previous=entry.meta.history.findLast(item=>item.confirmed && [...item.mealIds,...(item.evidenceMealIds ?? [])].every(id=>mealIds.has(id)));
       if (!record.confirmed && previous) records.push({...previous,historyCount:0});
@@ -277,7 +285,42 @@ export async function summarizeGoals(period:Period,today:string,includeLatest=fa
     }
     return null;
   }
-  return Promise.all(goals.map(async goal=>({goalId:goal.id,title:goal.title,
+  return {timelines, grouped, visibleRecords, newest};
+}
+
+export async function summarizeGoals(period:Period,today:string,includeLatest=false) {
+  const {timelines,grouped,newest}=await loadGoalProgress(period,today,includeLatest);
+  return Promise.all(timelines.map(async ({goal})=>({goalId:goal.id,title:goal.title,
     latest:includeLatest ? await newest(goal.id) : undefined,
     summary:summarizeProgress(goal,period,grouped.get(goal.id) ?? [],today)})));
+}
+
+export async function readGoalDashboard(range:DashboardRange,today:string):Promise<GoalDashboard> {
+  const {selection,sourceRange,weeks,months} = dashboardPeriods(range,today);
+  const {timelines,visibleRecords,newest} = await loadGoalProgress(sourceRange,today,true);
+  const goals = timelines.map(({goal})=>goal);
+  const records = goals.flatMap(goal=>visibleRecords.get(goal.id) ?? []);
+  const inRange = (rows:Progress[], dates:{start:string;until:string}) =>
+    rows.filter(row=>row.day>=dates.start && row.day<dates.until);
+  const recordedDays = new Map(goals.map(goal=>[goal.id,new Set((visibleRecords.get(goal.id) ?? []).map(row=>row.day))]));
+  const missingFor = (dates:{start:string;until:string}) => {
+    const counts = timelines.map(({goal,complete})=>complete ? unrecordedDays(goal,dates,recordedDays.get(goal.id)!) : null);
+    return counts.some(value=>value===null) ? null : counts.reduce<number>((sum,value)=>sum+(value ?? 0),0);
+  };
+  const points = (periods:Period[]) => periods.map(period=>{
+    const end = period.end<today ? period.end : today;
+    return {key:period.key,start:period.start,end,unrecorded:missingFor({start:period.start,until:shiftDate(end,1)}),
+      ...assessmentTotals(inRange(records,period))};
+  });
+  return {
+    asOf:today,start:selection.start,end:today,
+    managed:goals.filter(goal=>goal.status==='진행중' || goal.status==='유지').length,
+    proposed:goals.filter(goal=>goal.status==='제안').length,
+    unrecorded:missingFor(selection),
+    totals:assessmentTotals(inRange(records,selection)),
+    entries:await Promise.all(goals.map(async goal=>({
+      goalId:goal.id,totals:assessmentTotals(inRange(visibleRecords.get(goal.id) ?? [],selection)),latest:await newest(goal.id),
+    }))),
+    weeks:points(weeks),months:points(months),
+  };
 }

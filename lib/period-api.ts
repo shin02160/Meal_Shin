@@ -1,5 +1,6 @@
 import { todayKst } from './date';
-import { readProgress, saveProgress, summarizeGoals } from './goal-progress';
+import { dashboardRanges, type DashboardRange } from './goal-dashboard';
+import { readGoalDashboard, readProgress, saveProgress, summarizeGoals } from './goal-progress';
 import { HttpError, json } from './errors';
 import { periodFor } from './period';
 import { createManualPeriod, saveGoalOpinion, editGoal, editPeriod, generatePeriod, proposeGoal, publicGoals, readPeriod, reportHistory } from './period-reviews';
@@ -8,6 +9,11 @@ import { limitWrites } from './report-storage';
 export async function periodApi(request:Request,path:string[], readBody:()=>Promise<Record<string,unknown>>) {
   const [area,id,action] = path;
   const method = request.method;
+  if (area === 'goals' && method === 'GET' && id === 'dashboard' && path.length === 2) {
+    const range = new URL(request.url).searchParams.get('range') as DashboardRange;
+    if (!dashboardRanges.includes(range)) throw new HttpError(400,'조회 기간을 선택해 주세요.');
+    return json(await readGoalDashboard(range,todayKst()));
+  }
   if (area === 'goals' && method === 'GET' && id === 'progress-summary' && path.length === 2) {
     const params = new URL(request.url).searchParams;
     return json(await summarizeGoals(periodFor(params.get('type'),params.get('key')),todayKst(),params.get('latest') === '1'));
