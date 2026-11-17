@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { goalStates, type Goal, type ReportView } from '../../../lib/report-contracts';
 import { periodKey, type PeriodType } from '../../../lib/period';
 import { call, errorText } from './api';
+import { RecentGoalAssessment } from './recent-goal-assessment';
 import { GoalProgressCard, useProgressSummary } from './progress-screen';
 
 function GoalCard({goal,today,onSaved,progress,onProgressSaved}:{goal:Goal;today:string;onSaved:(goal:Goal)=>void;progress:ReturnType<typeof useProgressSummary>;onProgressSaved:()=>void}) {
@@ -130,7 +131,7 @@ export function GoalsScreen({today}:{today:string}) {
       return <article key={goal.id} className="panel goal-list-card">
         <div className="section-heading"><h2>{goal.title}</h2><span className="pill">{goal.status}</span></div>
         <p>이번 주 · {stats?.rate != null ? '평가 '+days+'일 / 달성률 '+stats.rate+'%' : '평가 데이터 없음'}</p>
-        <p>최근 평가 · {recent ? recent.day+' · '+recent.status : '미기록'}</p>
+        <RecentGoalAssessment assessment={recent}/>
         {progress.error && <p className="error" role="alert">{progress.error}</p>}
         <button className="save" onClick={()=>setSelected(goal.id)} aria-label={goal.title+' 달성 기록 관리'}>달성 기록 관리</button>
       </article>;

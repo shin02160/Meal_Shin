@@ -89,6 +89,13 @@ textarea::placeholder { color:var(--muted); }
 .goal-back { display:inline-flex; align-items:center; min-height:44px; width:fit-content; }
 .goal-list-card,.goal-detail { min-width:0; overflow-wrap:anywhere; }
 .goal-list-card .pill,.goal-detail .pill { flex-shrink:0; }
+.goal-recent-assessment { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:13px; }
+.goal-assessment-badge { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px; font-weight:650; white-space:nowrap; }
+.goal-assessment-badge--success { color:#207a5a; background:#e9f5ee; }
+.goal-assessment-badge--warning { color:#795300; background:#fff1bf; }
+.goal-assessment-badge--danger { color:var(--error); background:#fcebed; }
+.goal-assessment-badge--neutral { color:#484854; background:#e6e6ea; }
+.goal-assessment-badge--muted { color:var(--muted); background:#f4f4f5; }
 .goal-detail,.goal-settings { display:grid; gap:12px; }
 .goal-detail fieldset { min-width:0; }
 .goal-meal label { display:flex; min-width:0; flex:1; align-items:center; min-height:44px; gap:8px; }
