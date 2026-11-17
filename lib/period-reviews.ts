@@ -103,9 +103,9 @@ export async function generatePeriod(period: Period, regenerate: boolean, expect
     if (!regenerate && latest) throw race();
     const [goals, weekly] = await Promise.all([publicGoals(),weeklyReferences(period,input)]);
     const activeGoals = goals.filter(goal => {
-      const approvedAt = Date.parse(goal.history.find(event=>event.approved)?.at ?? goal.proposedAt);
-      return !!goal.reportId && goal.approved && ['진행중','유지'].includes(goal.status) &&
-        Number.isFinite(approvedAt) && kstDate(approvedAt) < period.start;
+      const activeAt = Date.parse(goal.history.find(event => !event.legacy && event.opinion === undefined && ['진행중','유지'].includes(event.status))?.at ?? goal.proposedAt);
+      return !!goal.reportId && ['진행중','유지'].includes(goal.status) &&
+        Number.isFinite(activeAt) && kstDate(activeAt) < period.start;
     });
     const visibleGoals = makeVisibilityCheck();
     const goalReports = await Promise.all(activeGoals.map(goal=>visibleGoals(goal.reportId)));
@@ -202,13 +202,9 @@ export async function editGoal(id:string,body:Record<string,unknown>) {
     if (goal.reportId && !await visible(goal.reportId)) throw new HttpError(404,'공유 근거가 남아 있는 목표를 찾을 수 없습니다.');
     if (evaluation.trim() && !reportId) throw new HttpError(400,'평가 근거로 확정 리포트를 선택해 주세요.');
     if (reportId && !await visible(reportId)) throw new HttpError(400,'공유 근거가 남아 있는 확정 리포트를 선택해 주세요.');
-    if (!goal.approved && status !== '제안' && !(status === '진행중' && body.approve === true)) {
-      throw new HttpError(409,'목표를 먼저 승인해 주세요.');
-    }
-    if (goal.approved && status === '제안') throw new HttpError(400,'승인된 목표의 진행 상태를 선택해 주세요.');
     if (goal.status === '종료') throw new HttpError(409,'종료된 목표입니다.');
     const event:Goal['history'][number] = {revision:randomUUID(),status,evaluation:evaluation.trim(),reportId,
-      approved:goal.approved || body.approve === true && status === '진행중',at:new Date().toISOString(),actor:'anonymous'};
+      approved:goal.approved,at:new Date().toISOString(),actor:'anonymous'};
     await guard.ensure();
     return visibleGoal(await updateGoal(goal,event),visible);
   });

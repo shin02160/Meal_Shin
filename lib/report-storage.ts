@@ -171,6 +171,10 @@ export async function updateReport(row:ReportVersion,feedback:string,confirm:boo
 function decodeGoal(page: Page): Goal {
   const value = property(page,'최근 평가');
   const events = value.startsWith('[') ? parse<Goal['history']>(value) : [];
+  if (!events.length && value.trim() && !value.startsWith('[')) {
+    events.push({legacy:true,at:page.properties['최종 평가일']?.date?.start ?? '',status:page.properties['목표 상태']?.select?.name ?? '제안',
+      approved:page.properties['강사 확정 여부']?.checkbox === true,evaluation:value,reportId:'',actor:'anonymous'});
+  }
   const last = events.at(-1);
   return {id:page.id,key:property(page,'목표 ID'),title:text(page.properties['개선 목표']?.title),
     kind:page.properties['목표 유형']?.select?.name ?? '기타',criteria:property(page,'실천 기준'),
@@ -194,7 +198,7 @@ export async function createGoal(goal: Omit<Goal,'id'|'revision'|'history'|'eval
 }
 export async function updateGoal(goal: Goal, event: Goal['history'][number]) {
   return decodeGoal(await notion<Page>('/pages/' + goal.id,'PATCH',{properties:{
-    '목표 상태':select(event.status),'강사 확정 여부':{checkbox:event.approved},
+    '목표 상태':select(event.status),
     '최근 평가':rich(JSON.stringify([...goal.history,event])),
     ...(event.opinion === undefined ? {'최종 평가일':date(event.at)} : {}),
   }}));

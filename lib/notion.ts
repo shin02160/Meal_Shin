@@ -7,7 +7,7 @@ type Photo = {type: string; file?: {url: string}};
 export type Property = {
   id?: string; type?: string; title?: RichText[]; rich_text?: RichText[];
   date?: {start: string} | null; select?: {name: string} | null;
-  checkbox?: boolean; files?: Photo[]; number?: number | null; relation?: {id:string}[];
+  checkbox?: boolean; files?: Photo[]; number?: number | null; relation?: {id:string}[]; has_more?:boolean;
   formula?: {type: string; string?: string | null; number?: number | null};
 };
 export type Page = {id: string; last_edited_time?: string; properties: Record<string, Property>};

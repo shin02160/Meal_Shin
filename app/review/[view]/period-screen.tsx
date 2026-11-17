@@ -7,6 +7,7 @@ import { isDate, shiftDate } from '../../../lib/date';
 import { periodFor, periodKey, type PeriodType } from '../../../lib/period';
 import type { Claim, ReportVersion, ReportView } from '../../../lib/report-contracts';
 import { call, errorText } from './api';
+import { PeriodProgress } from './progress-screen';
 
 type View = ReportView & {latestVersion:number};
 type History = {id:string;version:number;confirmedAt?:string;hidden:true} | ReportVersion;
@@ -120,6 +121,7 @@ export function PeriodScreen({type,initialKey}:{type:PeriodType;initialKey:strin
     {loadError && <section className="panel"><p role="alert" className="error">{loadError}</p>
       <button onClick={()=>{setLoadError('');setRefresh(refresh + 1);}}>다시 불러오기</button></section>}
     {active && <div className="period-stack">
+      <PeriodProgress type={type} periodKey={key}/>
       <section className="panel"><h2>공유 기록 집계</h2>
         {active.stats.mealCount === 0 && <p>공유된 식단 기록이 없습니다.</p>}
         <dl className="report-metrics">

@@ -20,5 +20,5 @@ export type Goal = {
   status:string; approved:boolean; reportId:string; proposedAt:string; revision:string;
   evaluation:string; evaluatedAt:string; history:GoalEvent[];
 };
-export type GoalEvent = {revision?:string; opinion?:string; at:string; status:string; approved:boolean; evaluation:string; reportId:string; actor:'anonymous'};
+export type GoalEvent = {revision?:string; legacy?:true; opinion?:string; at:string; status:string; approved:boolean; evaluation:string; reportId:string; actor:'anonymous'};
 export type ReportView = {period:Period; stats:PeriodInput['stats']; current:ReportVersion|null; final:ReportVersion|null; needsReview:boolean; currentStale:boolean; historyId?:string; daily:PeriodInput['daily']};

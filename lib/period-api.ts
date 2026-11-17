@@ -1,3 +1,5 @@
+import { todayKst } from './date';
+import { readProgress, saveProgress, summarizeGoals } from './goal-progress';
 import { HttpError, json } from './errors';
 import { periodFor } from './period';
 import { createManualPeriod, saveGoalOpinion, editGoal, editPeriod, generatePeriod, proposeGoal, publicGoals, readPeriod, reportHistory } from './period-reviews';
@@ -6,6 +8,18 @@ import { limitWrites } from './report-storage';
 export async function periodApi(request:Request,path:string[], readBody:()=>Promise<Record<string,unknown>>) {
   const [area,id,action] = path;
   const method = request.method;
+  if (area === 'goals' && method === 'GET' && id === 'progress-summary' && path.length === 2) {
+    const params = new URL(request.url).searchParams;
+    return json(await summarizeGoals(periodFor(params.get('type'),params.get('key')),todayKst()));
+  }
+  if (area === 'goals' && action === 'progress' && path.length === 3) {
+    if (method === 'GET') return json(await readProgress(id,new URL(request.url).searchParams.get('day')));
+    if (method === 'POST') {
+      const body = await readBody();
+      await limitWrites(body.action === 'draft' ? 'progress-ai' : 'progress',body.action === 'draft' ? 4 : 25,60);
+      return json(await saveProgress(id,body));
+    }
+  }
   if (method === 'GET') {
     if (area === 'reports' && path.length === 1) {
       const params = new URL(request.url).searchParams;

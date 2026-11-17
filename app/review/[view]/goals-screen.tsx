@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { goalStates, type Goal, type ReportView } from '../../../lib/report-contracts';
 import { periodKey, type PeriodType } from '../../../lib/period';
 import { call, errorText } from './api';
+import { GoalProgressCard, useProgressSummary } from './progress-screen';
 
-function GoalCard({goal,today,onSaved}:{goal:Goal;today:string;onSaved:(goal:Goal)=>void}) {
+function GoalCard({goal,today,onSaved,progress,onProgressSaved}:{goal:Goal;today:string;onSaved:(goal:Goal)=>void;progress:ReturnType<typeof useProgressSummary>;onProgressSaved:()=>void}) {
   const [status,setStatus] = useState(goal.status);
   const [opinion,setOpinion] = useState('');
   const [evaluation,setEvaluation] = useState('');
@@ -15,18 +16,18 @@ function GoalCard({goal,today,onSaved}:{goal:Goal;today:string;onSaved:(goal:Goa
   const [error,setError] = useState('');
   const [notice,setNotice] = useState('');
 
-  async function save(approve:boolean) {
+  async function save() {
     setPending(true);setError('');setNotice('');
     try {
       let reportId = '';
-      if (evaluation.trim() && !approve) {
+      if (evaluation.trim()) {
         const key = periodKey(periodType,periodDate);
         const report = await call<ReportView>('reports?type=' + periodType + '&key=' + key);
         if (!report.final) {setError('선택한 기간에 공개 가능한 확정 리포트가 없습니다.');return;}
         reportId = report.final.id;
       }
       const row = await call<Goal>('goals/' + goal.id,'PATCH',{
-        expectedRevision:goal.revision,status:approve?'진행중':status,evaluation:approve?'':evaluation,reportId,approve,
+        expectedRevision:goal.revision,status,evaluation,reportId,
       });
       onSaved(row);setNotice('저장했습니다.');setEvaluation('');setStatus(row.status);
     } catch (reason) {setError(errorText(reason));}
@@ -47,12 +48,12 @@ function GoalCard({goal,today,onSaved}:{goal:Goal;today:string;onSaved:(goal:Goa
   return <article className="panel">
     <div className="section-heading"><h2>{goal.title}</h2><span className="pill">{goal.status}</span></div>
     <p>{goal.kind} · {goal.criteria}</p>
+    <GoalProgressCard goal={goal} today={today} summary={progress.items?.find(item=>item.goalId===goal.id)?.summary} summaryError={progress.error} onSaved={onProgressSaved}/>
     {goal.evaluation && <p className="report-copy">{goal.evaluation}</p>}
-    {!goal.approved && goal.status !== '종료' && <button className="save" disabled={pending} onClick={()=>void save(true)}>목표 승인</button>}
-    {goal.approved && goal.status !== '종료' && <form onSubmit={event=>{event.preventDefault();void save(false);}}>
+    {goal.status !== '종료' && <form onSubmit={event=>{event.preventDefault();void save();}}>
       <label htmlFor={'state-'+goal.id}>진행 상태</label>
       <select id={'state-'+goal.id} value={status} disabled={pending} onChange={e=>setStatus(e.target.value)}>
-        {goalStates.filter(s=>s !== '제안').map(s=><option key={s}>{s}</option>)}
+        {goalStates.map(s=><option key={s}>{s}</option>)}
       </select>
       <label htmlFor={'evaluation-'+goal.id}>실천 평가</label>
       <textarea id={'evaluation-'+goal.id} value={evaluation} maxLength={1200} disabled={pending} onChange={e=>setEvaluation(e.target.value)}/>
@@ -84,6 +85,8 @@ export function GoalsScreen({today}:{today:string}) {
   const [goals,setGoals] = useState<Goal[]|null>(null);
   const [error,setError] = useState('');
   const [refresh,setRefresh] = useState(0);
+  const [progressVersion,setProgressVersion] = useState(0);
+  const progress = useProgressSummary('weekly',periodKey('weekly',today),progressVersion);
   useEffect(()=>{
     const controller = new AbortController();
     call<Goal[]>('goals','GET',undefined,controller.signal).then(items=>{if (!controller.signal.aborted) setGoals(items);})
@@ -95,7 +98,7 @@ export function GoalsScreen({today}:{today:string}) {
   if (!goals) return <p className="panel skeleton" role="status">개선 목표를 불러오는 중입니다.</p>;
   return <div className="period-stack">
     {!goals.length && <p className="panel">아직 등록된 개선 목표가 없습니다. 확정한 주간·월간 리뷰에서 목표를 추가할 수 있습니다.</p>}
-    {goals.map(goal=><GoalCard key={goal.id} goal={goal} today={today}
-      onSaved={row=>setGoals(previous=>previous?.map(item=>item.id === row.id ? row : item) ?? null)}/>)}
+    {goals.map(goal=><GoalCard key={goal.id} goal={goal} today={today} progress={progress} onProgressSaved={()=>setProgressVersion(value=>value+1)}
+      onSaved={row=>{setGoals(previous=>previous?.map(item=>item.id === row.id ? row : item) ?? null);setProgressVersion(value=>value+1);}}/>)}
   </div>;
 }

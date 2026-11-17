@@ -26,6 +26,7 @@ const mealsId = 'meal-source';
 const dailyId = 'daily-source';
 const reportsId = 'period-source';
 const goalsId = 'goal-source';
+const progressId = 'progress-source';
 const text = (value:string) => [{plain_text:value}];
 type Row = {id:string; parent?:{data_source_id:string}; last_edited_time:string; properties:Record<string,unknown>};
 const at = '2026-11-16T13:01:00Z';
@@ -52,7 +53,7 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   const passwordHash = salt.toString('hex') + ':' + scryptSync(password,salt,32).toString('hex');
   Object.assign(process.env,{OWNER_PASSWORD_HASH:passwordHash,
     NOTION_TOKEN:'fake',NOTION_MEAL_LOG_DATA_SOURCE_ID:mealsId,NOTION_DAILY_REVIEW_DATA_SOURCE_ID:dailyId,
-    NOTION_PERIOD_REVIEW_DATA_SOURCE_ID:reportsId,NOTION_IMPROVEMENT_TRACKER_DATA_SOURCE_ID:goalsId,
+    NOTION_PERIOD_REVIEW_DATA_SOURCE_ID:reportsId,NOTION_IMPROVEMENT_TRACKER_DATA_SOURCE_ID:goalsId,NOTION_GOAL_PROGRESS_DATA_SOURCE_ID:progressId,
     AUTH_STORE_URL:'https://redis.test',AUTH_STORE_TOKEN:'fake',OPENAI_API_KEY:'fake',
     MEAL_AI_MODEL:'test-model',APP_ORIGIN:'https://instructor.test',
   });
@@ -67,7 +68,7 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
       meal('missing-time','',null,true),
     ],
     [dailyId]:[daily('complete',day,'완료'),daily('incomplete',day,'검토중'),daily('no-meal','2026-11-17','완료')],
-    [reportsId]:[],[goalsId]:[],
+    [reportsId]:[],[goalsId]:[],[progressId]:[],
   };
   const store = new Map<string,string>();
   let calls = 0;
@@ -102,6 +103,12 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
       return Response.json({result});
     }
     if (url.hostname === 'api.openai.com') {
+      if (body.response_format?.json_schema?.name === 'goal_progress') {
+        const input=JSON.parse(body.messages[1].content);
+        assert.equal(input.meals.some((meal:object)=>'sharedNote' in meal || 'mealNote' in meal),false);
+        assert.equal(input.meals.length,1);
+        return Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify({status:'부분달성',evidence:'가상 기록 근거'})}}]});
+      }
       calls++;
       assert.equal(body.store,false);
       const serialized = body.messages[1].content;
@@ -148,8 +155,8 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
     }));
     if (options?.method === 'POST' && url.pathname === '/v1/pages') {
       const source = body.parent.data_source_id;
-      assert(source === reportsId || source === goalsId);
-      const id = '11111111-1111-1111-1111-' + String(rows[reportsId].length + rows[goalsId].length + 1).padStart(12,'0');
+      assert(source === reportsId || source === goalsId || source === progressId);
+      const id = '11111111-1111-1111-1111-' + String(rows[reportsId].length + rows[goalsId].length + rows[progressId].length + 1).padStart(12,'0');
       const row = {id,parent:{data_source_id:source},last_edited_time:at,properties:properties()};
       rows[source].push(row);
       if (body.children) blockBodies.set(id,body.children.map((block:{paragraph:{rich_text:{text:{content:string}}[]}})=>({
@@ -157,7 +164,7 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
       })));
       return Response.json(row);
     }
-    const row = [...rows[reportsId],...rows[goalsId]].find(row=>url.pathname.endsWith('/' + row.id));
+    const row = [...rows[reportsId],...rows[goalsId],...rows[progressId]].find(row=>url.pathname.endsWith('/' + row.id));
     if (!row) return new Response(null,{status:404});
     if (options?.method === 'PATCH') row.properties = {...row.properties,...properties()};
     return Response.json(row);
@@ -221,8 +228,9 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   assert.equal(goal.approved,false);
   assert.equal((await (await api('goals','POST',{reportId:final.id,index:0})).json()).id,goal.id);
   const approved:Goal = await (await api('goals/'+goal.id,'PATCH',
-    {expectedRevision:goal.revision,status:'진행중',approve:true})).json();
-  assert.equal(approved.approved,true);
+    {expectedRevision:goal.revision,status:'진행중'})).json();
+  assert.equal(approved.approved,false);
+  assert.equal(approved.status,'진행중');
   const goalUpdate = await api('goals/'+goal.id,'PATCH',
     {expectedRevision:approved.revision,status:'유지',evaluation:'실천이 확인됐습니다.',reportId:final.id});
   assert.equal(goalUpdate.status,200);
@@ -239,6 +247,43 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   assert.equal((await api('goals/'+goal.id+'/opinion','POST',opinionBody)).status,409);
   const goalList:Goal[] = await (await api('goals')).json();
   assert.equal(goalList[0].history.at(-1)?.opinion,opinionBody.opinion);
+
+  const progressPath = 'goals/'+goal.id+'/progress';
+  const progressDay = '2026-11-18';
+  const saveProgress = (action:string,expectedRevision='',extra={}) =>
+    api(progressPath,'POST',{day:progressDay,action,expectedRevision,...extra});
+  const concurrentProgress = await Promise.all([saveProgress('draft'),saveProgress('draft')]);
+  assert.deepEqual(concurrentProgress.map(item=>item.status).sort(),[200,409]);
+  const {record:progressDraft} = await concurrentProgress.find(item=>item.ok)!.json();
+  assert.equal(progressDraft.confirmed,false);
+  assert.deepEqual(progressDraft.mealIds,['tea']);
+  assert.equal(progressDraft.status,'부분달성');
+  assert.equal((await saveProgress('confirm',progressDraft.revision,{status:'부분달성',mealIds:['unshared-meal']})).status,400);
+  const {record:progressFinal} = await (await saveProgress('confirm',progressDraft.revision,{status:'부분달성',mealIds:['tea'],memo:'확인 메모'})).json();
+  assert.equal(progressFinal.confirmed,true);
+  assert.equal(progressFinal.evidence,'가상 기록 근거');
+  assert.equal((await saveProgress('save',progressFinal.revision,{status:'달성'})).status,409);
+  const progressSummary = 'goals/progress-summary?type=weekly&key='+key;
+  const summary = (await (await api(progressSummary)).json())[0].summary;
+  assert.equal(summary.partial,1);
+  assert.equal(summary.rate,0);
+  const {record:reopenedProgress} = await (await saveProgress('restart',progressFinal.revision)).json();
+  assert.equal(reopenedProgress.confirmed,false);
+  assert.equal((await saveProgress('remove',reopenedProgress.revision)).status,409);
+  const reopenedSummary = (await (await api(progressSummary)).json())[0].summary;
+  assert.equal(reopenedSummary.partial,1);
+  assert.equal(reopenedSummary.drafts,1);
+  const tea = rows[mealsId].find(item=>item.id==='tea')!;
+  tea.properties['공유 여부']={checkbox:false};
+  assert.equal((await api(progressPath+'?day='+progressDay)).status,404);
+  tea.properties['공유 여부']={checkbox:true};
+  const emptyProgressPath = progressPath+'?day=2026-11-17';
+  const empty = await api(progressPath,'POST',{day:'2026-11-17',action:'save',status:'미달성'});
+  assert.equal(empty.status,200);
+  const {record:emptyRecord} = await empty.json();
+  assert.equal(emptyRecord.status,'판단불가');
+  assert.equal((await api(progressPath,'POST',{day:'2026-11-17',action:'remove',expectedRevision:emptyRecord.revision})).status,200);
+  assert.equal((await (await api(emptyProgressPath)).json()).record,null);
 
   const month = await generate(false,0,'monthly','2026-11');
   assert.equal(month.status,200);
