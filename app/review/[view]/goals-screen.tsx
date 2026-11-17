@@ -45,10 +45,10 @@ function GoalCard({goal,today,onSaved}:{goal:Goal;today:string;onSaved:(goal:Goa
 
   const latestOpinion = goal.history.findLast(event=>event.opinion)?.opinion;
   return <article className="panel">
-    <div className="section-heading"><h2>{goal.title}</h2><span className="pill">{goal.status}</span></div>
+    <div className="section-heading"><h2>{goal.title}</h2><span className="pill">목표 상태 · {goal.status}</span></div>
     <p>{goal.kind} · {goal.criteria}</p>
     {goal.evaluation && <p className="report-copy">{goal.evaluation}</p>}
-    {!goal.approved && <button className="save" disabled={pending} onClick={()=>void save(true)}>목표 승인</button>}
+    {!goal.approved && goal.status !== '종료' && <button className="save" disabled={pending} onClick={()=>void save(true)}>목표 승인</button>}
     {goal.approved && goal.status !== '종료' && <form onSubmit={event=>{event.preventDefault();void save(false);}}>
       <label htmlFor={'state-'+goal.id}>진행 상태</label>
       <select id={'state-'+goal.id} value={status} disabled={pending} onChange={e=>setStatus(e.target.value)}>

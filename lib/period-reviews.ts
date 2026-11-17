@@ -82,7 +82,7 @@ function makeVisibilityCheck() {
 }
 
 async function visibleGoal(goal:Goal, visible:ReturnType<typeof makeVisibilityCheck>) {
-  if (!await visible(goal.reportId)) return null;
+  if (goal.reportId && !await visible(goal.reportId)) return null;
   const history = (await Promise.all(goal.history.map(async event =>
     !event.reportId || await visible(event.reportId) ? event : null))).filter(event => event !== null);
   return {...goal,history,evaluation:history.filter(event=>event.opinion === undefined).at(-1)?.evaluation ?? ''};
@@ -104,7 +104,7 @@ export async function generatePeriod(period: Period, regenerate: boolean, expect
     const [goals, weekly] = await Promise.all([publicGoals(),weeklyReferences(period,input)]);
     const activeGoals = goals.filter(goal => {
       const approvedAt = Date.parse(goal.history.find(event=>event.approved)?.at ?? goal.proposedAt);
-      return goal.approved && ['진행중','유지'].includes(goal.status) &&
+      return !!goal.reportId && goal.approved && ['진행중','유지'].includes(goal.status) &&
         Number.isFinite(approvedAt) && kstDate(approvedAt) < period.start;
     });
     const visibleGoals = makeVisibilityCheck();
@@ -199,7 +199,7 @@ export async function editGoal(id:string,body:Record<string,unknown>) {
       throw new HttpError(400,'목표 상태와 평가 내용을 확인해 주세요.');
     }
     const visible = makeVisibilityCheck();
-    if (!await visible(goal.reportId)) throw new HttpError(404,'공유 근거가 남아 있는 목표를 찾을 수 없습니다.');
+    if (goal.reportId && !await visible(goal.reportId)) throw new HttpError(404,'공유 근거가 남아 있는 목표를 찾을 수 없습니다.');
     if (evaluation.trim() && !reportId) throw new HttpError(400,'평가 근거로 확정 리포트를 선택해 주세요.');
     if (reportId && !await visible(reportId)) throw new HttpError(400,'공유 근거가 남아 있는 확정 리포트를 선택해 주세요.');
     if (!goal.approved && status !== '제안' && !(status === '진행중' && body.approve === true)) {
@@ -223,7 +223,7 @@ export async function saveGoalOpinion(id:string,body:Record<string,unknown>) {
     const goal = await getGoal(id);
     if (body.expectedRevision !== goal.revision) throw race();
     const visible = makeVisibilityCheck();
-    if (!await visible(goal.reportId)) throw new HttpError(404,'공유 근거가 남아 있는 목표를 찾을 수 없습니다.');
+    if (goal.reportId && !await visible(goal.reportId)) throw new HttpError(404,'공유 근거가 남아 있는 목표를 찾을 수 없습니다.');
     const event:Goal['history'][number] = {
       revision:randomUUID(),at:new Date().toISOString(),actor:'anonymous',status:goal.status,
       approved:goal.approved,evaluation:'',reportId:'',opinion:opinion.trim(),

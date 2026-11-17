@@ -277,6 +277,25 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   assert(hiddenHistory.every((row:{hidden:boolean})=>row.hidden));
   assert(!JSON.stringify(hiddenHistory).includes('확정 내용'));
   assert.deepEqual(await (await api('goals')).json(),[]);
+  const statuses = ['제안','진행중','유지','보류','종료'];
+  for (const [index,status] of statuses.entries()) {
+    rows[goalsId].push({
+      id:'11111111-1111-1111-1111-' + String(101 + index).padStart(12,'0'),
+      parent:{data_source_id:goalsId},last_edited_time:at,properties:{
+        '개선 목표':{title:text('단독 목표 ' + status)},'목표 상태':{select:{name:status}},
+        '강사 확정 여부':{checkbox:index > 0},
+      },
+    });
+  }
+  const standalone:Goal[] = await (await api('goals')).json();
+  assert.deepEqual(standalone.map(goal=>goal.status),statuses);
+  const opinionResult = await api('goals/'+standalone[0].id+'/opinion','POST',{
+    opinion:'단독 목표에 남긴 의견',expectedRevision:standalone[0].revision,
+  });
+  assert.equal(opinionResult.status,200);
+  const updatedStandalone:Goal = await opinionResult.json();
+  assert.equal(updatedStandalone.status,'제안');
+  assert.equal(updatedStandalone.history.at(-1)?.opinion,'단독 목표에 남긴 의견');
   const later = await (await api('reports?type=weekly&key=2026-W48')).json();
   assert.equal(later.current,null);
   assert.equal(later.needsReview,true);
