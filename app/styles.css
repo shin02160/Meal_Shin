@@ -84,7 +84,7 @@ textarea::placeholder { color:var(--muted); }
 .site-login { display:grid; gap:12px; }
 .site-login input { width:100%; min-height:44px; border:1px solid #a49aae; border-radius:12px; padding:8px 12px; }
 
-.goal-list-filter,.goal-meal { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.goal-list-filter { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
 .goal-list-filter select { min-height:44px; max-width:100%; }
 .goal-back { display:inline-flex; align-items:center; min-height:44px; width:fit-content; }
 .goal-list-card,.goal-detail { min-width:0; overflow-wrap:anywhere; }
@@ -98,6 +98,8 @@ textarea::placeholder { color:var(--muted); }
 .goal-assessment-badge--muted { color:var(--muted); background:#f4f4f5; }
 .goal-detail,.goal-settings { display:grid; gap:12px; }
 .goal-detail fieldset { min-width:0; }
-.goal-meal label { display:flex; min-width:0; flex:1; align-items:center; min-height:44px; gap:8px; }
-.goal-meal input[type="checkbox"] { width:20px; height:20px; flex-shrink:0; }
-.goal-meal a { min-height:44px; display:inline-flex; align-items:center; }
+.goal-meal { display:flex; flex-wrap:wrap; align-items:flex-end; column-gap:8px; }
+.goal-meal + .goal-meal { border-top:1px solid var(--border); margin-top:12px; padding-top:12px; }
+.goal-meal label { display:flex; min-width:0; flex:1 1 172px; align-items:flex-start; min-height:44px; gap:8px; }
+.goal-meal input[type="checkbox"] { width:20px; height:20px; margin:2px 0 0; flex-shrink:0; }
+.goal-meal a { min-height:44px; display:inline-flex; align-items:center; margin-inline-start:auto; }
