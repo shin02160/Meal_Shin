@@ -1,6 +1,5 @@
-import { isDate, shiftDate } from './date';
-import { kstDate, periodFor, periodKey } from './period';
-import type { Goal, GoalEvent } from './report-contracts';
+import { shiftDate } from './date';
+import { periodFor, periodKey } from './period';
 import type { GoalProgressSummary, Progress } from './progress-contracts';
 
 export const dashboardRanges = ['week', 'month', 'quarter'] as const;
@@ -43,47 +42,23 @@ export function assessmentTotals(records: readonly Pick<Progress, 'status'>[]) {
   return { ...counts, evaluated, rate: evaluated ? Math.round(1000 * counts.achieved / evaluated) / 10 : null };
 }
 
-function localDay(value: string) {
-  if (isDate(value)) return value;
-  const time = Date.parse(value);
-  return Number.isFinite(time) ? kstDate(time) : '';
-}
-
-export function unrecordedDays(goal: Pick<Goal, 'proposedAt' | 'status' | 'history'>, range: DateRange, recorded: ReadonlySet<string>) {
-  const start = localDay(goal.proposedAt);
-  if (!start) return null;
-  if (start >= range.until) return 0;
-  const events = goal.history.filter(event => event.opinion === undefined);
-  if (events.some(event => event.legacy || !localDay(event.at) || localDay(event.at) < start)) return null;
-  const states = events.map(event => ({ day: localDay(event.at), status: event.status }))
-    .sort((left, right) => left.day.localeCompare(right.day));
-  if (!hasKnownBeginning(goal.status, events) || (states.at(-1)?.status ?? '제안') !== goal.status) return null;
-
+export function unrecordedDays(range: DateRange, recorded: ReadonlySet<string>) {
   let missing = 0;
-  let status = '제안';
-  let index = 0;
-  for (let day = range.start > start ? range.start : start; day < range.until; day = shiftDate(day, 1)) {
-    while (index < states.length && states[index].day <= day) status = states[index++].status;
-    if ((status === '진행중' || status === '유지') && !recorded.has(day)) missing++;
+  for (let day = range.start; day < range.until; day = shiftDate(day, 1)) {
+    if (!recorded.has(day)) missing++;
   }
   return missing;
 }
 
-function hasKnownBeginning(status: string, events: GoalEvent[]) {
-  // Goals created by the app begin as 제안. A legacy active goal has no
-  // reliable active start until its history documents an activation.
-  return events[0]?.status === '진행중' || (!events.length && status === '제안');
-}
-
 type Totals = ReturnType<typeof assessmentTotals>;
-export type DashboardPoint = Totals & { key: string; start: string; end: string; unrecorded: number | null };
+export type DashboardPoint = Totals & { key: string; start: string; end: string; unrecorded: number };
 export type GoalDashboard = {
   asOf: string;
   start: string;
   end: string;
   managed: number;
   proposed: number;
-  unrecorded: number | null;
+  unrecorded: number;
   totals: Totals;
   entries: { goalId: string; totals: Totals; latest: GoalProgressSummary['latest'] }[];
   weeks: DashboardPoint[];

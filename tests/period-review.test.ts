@@ -275,6 +275,8 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   const unconfirmedDashboard = await (await api(dashboardPath)).json();
   assert.equal(unconfirmedDashboard.totals.partial,1);
   assert.equal(unconfirmedDashboard.totals.evaluated,1);
+  assert.equal(unconfirmedDashboard.managed,1);
+  assert.equal(unconfirmedDashboard.unrecorded,2);
   assert.equal(unconfirmedDashboard.entries[0].latest.confirmed,false);
   const monthDashboard = await (await api('goals/dashboard?range=month')).json();
   assert.equal(monthDashboard.start,'2026-11-01');

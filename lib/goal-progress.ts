@@ -6,7 +6,7 @@ import { assessmentTotals, dashboardPeriods, unrecordedDays, type DashboardRange
 import { HttpError, required } from './errors';
 import { mealsFor, notion, queryNotion, text, type Page } from './notion';
 import { kstDate, type Period } from './period';
-import { publicGoals, publicGoalTimelines } from './period-reviews';
+import { publicGoals } from './period-reviews';
 import { progressDraft } from './progress-ai';
 import { progressStates, type Progress, type ProgressState, type ProgressSummary } from './progress-contracts';
 import type { Goal } from './report-contracts';
@@ -224,7 +224,7 @@ export function summarizeProgress(goal:Goal,period:Period,records:Progress[],tod
 }
 
 async function loadGoalProgress(period:Pick<Period,'start'|'until'>,today:string,includeLatest:boolean) {
-  const [timelines,input,pages] = await Promise.all([publicGoalTimelines(),collectPeriod(period),queryNotion(source(),progressFields,includeLatest ? undefined : {and:[
+  const [goals,input,pages] = await Promise.all([publicGoals(),collectPeriod(period),queryNotion(source(),progressFields,includeLatest ? undefined : {and:[
     {property:'평가 날짜',date:{on_or_after:period.start}},{property:'평가 날짜',date:{before:period.until}},]})]);
   const mealsByDay = new Map<string,Set<string>>();
   for (const meal of input.meals) {
@@ -285,28 +285,26 @@ async function loadGoalProgress(period:Pick<Period,'start'|'until'>,today:string
     }
     return null;
   }
-  return {timelines, grouped, visibleRecords, newest};
+  return {goals, grouped, visibleRecords, newest};
 }
 
 export async function summarizeGoals(period:Period,today:string,includeLatest=false) {
-  const {timelines,grouped,newest}=await loadGoalProgress(period,today,includeLatest);
-  return Promise.all(timelines.map(async ({goal})=>({goalId:goal.id,title:goal.title,
+  const {goals,grouped,newest}=await loadGoalProgress(period,today,includeLatest);
+  return Promise.all(goals.map(async goal=>({goalId:goal.id,title:goal.title,
     latest:includeLatest ? await newest(goal.id) : undefined,
     summary:summarizeProgress(goal,period,grouped.get(goal.id) ?? [],today)})));
 }
 
 export async function readGoalDashboard(range:DashboardRange,today:string):Promise<GoalDashboard> {
   const {selection,sourceRange,weeks,months} = dashboardPeriods(range,today);
-  const {timelines,visibleRecords,newest} = await loadGoalProgress(sourceRange,today,true);
-  const goals = timelines.map(({goal})=>goal);
+  const {goals,visibleRecords,newest} = await loadGoalProgress(sourceRange,today,true);
+  const managed = goals.filter(goal=>goal.status==='진행중' || goal.status==='유지');
   const records = goals.flatMap(goal=>visibleRecords.get(goal.id) ?? []);
   const inRange = (rows:Progress[], dates:{start:string;until:string}) =>
     rows.filter(row=>row.day>=dates.start && row.day<dates.until);
-  const recordedDays = new Map(goals.map(goal=>[goal.id,new Set((visibleRecords.get(goal.id) ?? []).map(row=>row.day))]));
-  const missingFor = (dates:{start:string;until:string}) => {
-    const counts = timelines.map(({goal,complete})=>complete ? unrecordedDays(goal,dates,recordedDays.get(goal.id)!) : null);
-    return counts.some(value=>value===null) ? null : counts.reduce<number>((sum,value)=>sum+(value ?? 0),0);
-  };
+  const recordedDays = managed.map(goal=>new Set((visibleRecords.get(goal.id) ?? []).map(row=>row.day)));
+  const missingFor = (dates:{start:string;until:string}) =>
+    recordedDays.reduce((sum,days)=>sum+unrecordedDays(dates,days),0);
   const points = (periods:Period[]) => periods.map(period=>{
     const end = period.end<today ? period.end : today;
     return {key:period.key,start:period.start,end,unrecorded:missingFor({start:period.start,until:shiftDate(end,1)}),
@@ -314,7 +312,7 @@ export async function readGoalDashboard(range:DashboardRange,today:string):Promi
   });
   return {
     asOf:today,start:selection.start,end:today,
-    managed:goals.filter(goal=>goal.status==='진행중' || goal.status==='유지').length,
+    managed:managed.length,
     proposed:goals.filter(goal=>goal.status==='제안').length,
     unrecorded:missingFor(selection),
     totals:assessmentTotals(inRange(records,selection)),

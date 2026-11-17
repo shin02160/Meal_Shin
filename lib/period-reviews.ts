@@ -95,19 +95,10 @@ async function visibleGoal(goal:Goal, visible:ReturnType<typeof makeVisibilityCh
     !event.reportId || await visible(event.reportId) ? event : null))).filter(event => event !== null);
   return {...goal,history,evaluation:history.filter(event=>event.opinion === undefined).at(-1)?.evaluation ?? ''};
 }
-export async function publicGoalTimelines() {
-  const visible = makeVisibilityCheck();
-  const entries = await Promise.all((await listGoals()).map(async original=>{
-    const goal = await visibleGoal(original,visible);
-    if (!goal) return null;
-    const statusEvents = (row:Goal) => row.history.filter(event=>event.opinion === undefined).length;
-    return {goal,complete:statusEvents(goal)===statusEvents(original)};
-  }));
-  return entries.filter(entry=>entry !== null);
-}
-
 export async function publicGoals() {
-  return (await publicGoalTimelines()).map(({goal})=>goal);
+  const visible = makeVisibilityCheck();
+  const safe = await Promise.all((await listGoals()).map(goal=>visibleGoal(goal,visible)));
+  return safe.filter(goal=>goal !== null);
 }
 
 export async function generatePeriod(period: Period, regenerate: boolean, expectedVersion: unknown) {

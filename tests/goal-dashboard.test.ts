@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { assessmentTotals, dashboardPeriods, unrecordedDays } from '../lib/goal-dashboard';
-import type { GoalEvent } from '../lib/report-contracts';
 
 test('dashboard uses current Korean calendar week and calendar months through today', () => {
   assert.deepEqual(dashboardPeriods('week','2026-01-01').selection,{start:'2025-12-29',until:'2026-01-02'});
@@ -19,14 +18,8 @@ test('dashboard counts achieved, partial and missed in denominator, excluding un
   assert.equal(assessmentTotals([]).rate,null);
 });
 
-test('missing dates exclude proposed, suspended, ended and future dates', () => {
-  const event = (at:string,status:string):GoalEvent => ({at,status,approved:false,evaluation:'',reportId:'',actor:'anonymous'});
-  const history = [event('2026-11-02T15:30:00Z','진행중'),event('2026-11-05','보류'),event('2026-11-07','유지'),event('2026-11-09','종료')];
-  const range = {start:'2026-11-01',until:'2026-11-11'};
-  const goal = {proposedAt:'2026-11-02',status:'종료',history};
-  assert.equal(unrecordedDays(goal,range,new Set(['2026-11-03','2026-11-08'])),2);
-  assert.equal(unrecordedDays({...goal,proposedAt:''},range,new Set()),null);
-  assert.equal(unrecordedDays({...goal,status:'진행중',history:[]},range,new Set()),null);
-  assert.equal(unrecordedDays({...goal,history:[{...history[0],legacy:true}]},range,new Set()),null);
-  assert.equal(unrecordedDays({...goal,proposedAt:'2026-11-12'},range,new Set()),0);
+test('missing dates use the full selected range through today', () => {
+  const range = dashboardPeriods('week','2026-11-18').selection;
+  assert.equal(unrecordedDays(range,new Set(['2026-11-16','2026-11-18','2026-11-19'])),1);
+  assert.equal(unrecordedDays(range,new Set()),3);
 });
