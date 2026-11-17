@@ -1,3 +1,4 @@
+import { redis } from './auth';
 import { randomUUID } from 'node:crypto';
 import { collectPeriod } from './analysis-input';
 import { isDate, shiftDate } from './date';
@@ -15,8 +16,8 @@ export const progressFields = {
   '평가 날짜':'date','개선 목표':'relation','관련 식단':'relation','달성 상태':'select','AI 평가 근거':'rich_text',
   '사용자 확인':'checkbox','사용자 메모':'rich_text','강사 의견':'rich_text','평가 출처':'select','평가 기준 버전':'rich_text',
 };
-type Snapshot = Omit<Progress,'historyCount'>;
-type Meta = {criterion:string; revision:string; deleted:boolean; history:Snapshot[]};
+type Snapshot = Omit<Progress,'historyCount'> & {evidenceMealIds?:string[]};
+type Meta = {criterion:string; revision:string; deleted:boolean; evidenceMealIds?:string[]; history:Snapshot[]};
 type Entry = {record:Progress; meta:Meta};
 const legacyMeta = (page:Page):Meta => ({criterion:'GP-1.0',revision:page.last_edited_time ?? '',deleted:false,history:[]});
 const rich = (value:string) => {
@@ -62,7 +63,7 @@ async function one(goalId:string,day:string) {
 function safeRecord(entry:Entry|undefined, shared:Set<string>) {
   if (!entry || entry.meta.deleted) return null;
   const {record} = entry;
-  if (record.mealIds.some(id=>!shared.has(id))) return null;
+  if ([...record.mealIds,...(entry.meta.evidenceMealIds ?? [])].some(id=>!shared.has(id))) return null;
   return record;
 }
 export async function readProgress(goalId:string,date:unknown) {
@@ -70,8 +71,8 @@ export async function readProgress(goalId:string,date:unknown) {
   await goalFor(goalId);
   const [entry,meals] = await Promise.all([one(goalId,day),mealsFor(day)]);
   const record = safeRecord(entry,new Set(meals.map(meal=>meal.id)));
-  const history = (entry?.meta.history ?? []).filter(row=>row.mealIds.every(id=>meals.some(meal=>meal.id===id)));
-  return {record,history,meals:meals.map(({id,title})=>({id,title})),
+  const history = (entry?.meta.history ?? []).filter(row=>[...row.mealIds,...(row.evidenceMealIds ?? [])].every(id=>meals.some(meal=>meal.id===id)));
+  return {record,history,meals:meals.map(({id,title,category,startAt})=>({id,title,category,startAt})),
     hidden:!!entry && !entry.meta.deleted && !record};
 }
 
@@ -79,10 +80,35 @@ function shortText(value:unknown) {
   if (typeof value !== 'string' || value.length > 1200) throw new HttpError(400,'메모와 의견을 각각 1,200자 이하로 입력해 주세요.');
   return value.trim();
 }
+type Preview = {goalId:string;day:string;revision:string;status:ProgressState;evidence:string;mealIds:string[];input:string};
+const previewKey = (id:string) => 'meal:v131:progress-preview:' + id;
+const inputSignature = (meals:Awaited<ReturnType<typeof mealsFor>>,criterion:string) =>
+  JSON.stringify({criterion,meals:meals.map(({id,startAt,foods})=>({id,startAt,foods}))});
+
+async function previewProgress(goalId:string,day:string,body:Record<string,unknown>) {
+  const goal = await goalFor(goalId);
+  const [entry,meals] = await Promise.all([one(goalId,day),mealsFor(day)]);
+  const current = safeRecord(entry,new Set(meals.map(meal=>meal.id)));
+  if (entry && !entry.meta.deleted && !current) throw race();
+  if (current?.confirmed || (body.expectedRevision ?? '') !== (current?.revision ?? '')) throw race();
+  const candidates = meals.slice(0,20);
+  const result = candidates.length && goal.criteria.trim() ?
+    await progressDraft(goal.criteria,candidates.map(({startAt,foods})=>({startAt,foods:foods.slice(0,700)}))) :
+    {status:'판단불가' as const,evidence:candidates.length ? '목표의 실천 기준이 없어 판단할 수 없습니다.' : '공유된 식단 기록이 없습니다.'};
+  const refreshed = await mealsFor(day);
+  if (inputSignature(refreshed,goal.criteria) !== inputSignature(meals,goal.criteria)) throw race();
+  const draftId = randomUUID();
+  const draft = {...result,mealIds:candidates.map(meal=>meal.id)};
+  const preview:Preview = {...draft,goalId,day,revision:current?.revision ?? '',input:inputSignature(meals,goal.criteria)};
+  await redis('SET',previewKey(draftId),JSON.stringify(preview),'EX',1800);
+  return {draft:{id:draftId,...draft}};
+}
+
 export async function saveProgress(goalId:string,body:Record<string,unknown>) {
   const day = validateDay(body.day);
   const action = body.action;
-  if (action !== 'save' && action !== 'confirm' && action !== 'draft' && action !== 'restart' && action !== 'remove' && action !== 'opinion') {
+  if (action === 'draft') return previewProgress(goalId,day,body);
+  if (action !== 'save' && action !== 'confirm' && action !== 'restart' && action !== 'remove' && action !== 'opinion') {
     throw new HttpError(400,'평가 작업을 확인해 주세요.');
   }
   const goal = await goalFor(goalId);
@@ -100,29 +126,32 @@ export async function saveProgress(goalId:string,body:Record<string,unknown>) {
     if (action === 'remove' && entry?.meta.history.some(item=>item.confirmed)) {
       throw new HttpError(409,'이전에 확인된 평가가 있는 기록은 삭제할 수 없습니다.');
     }
-    if ((action === 'remove' || action === 'restart' || action === 'opinion') && !current) throw race();
+    if ((action === 'confirm' || action === 'remove' || action === 'restart' || action === 'opinion') && !current) throw race();
     const base:Progress = current ?? {id:'',goalId,day,revision:'',status:'판단불가',mealIds:[],
       confirmed:false,source:'사용자 입력',memo:'',opinion:'',evidence:'',historyCount:0};
     let next = {...base};
-    if (action === 'draft') {
-      const draft = meals.length && goal.criteria.trim() ? await progressDraft(goal.criteria,meals.slice(0,20).map(({startAt,foods})=>({startAt,foods:foods.slice(0,700)}))) :
-        {status:'판단불가' as const,evidence:meals.length ? '목표의 실천 기준이 없어 판단할 수 없습니다.' : '공유된 식단 기록이 없습니다.'};
-      const refreshed = await mealsFor(day);
-      const signature = (items:typeof meals) => JSON.stringify(items.map(({id,startAt,foods})=>({id,startAt,foods})));
-      if (signature(refreshed) !== signature(meals)) throw race();
-      next = {...next,...draft,mealIds:meals.slice(0,20).map(meal=>meal.id),confirmed:false,source:'AI 초안'};
-    } else if (action === 'save' || action === 'confirm') {
+    let evidenceMealIds = entry?.meta.evidenceMealIds ?? (base.evidence ? base.mealIds : []);
+    if (action === 'save') {
       if (!progressStates.includes(body.status as never)) throw new HttpError(400,'달성 상태를 확인해 주세요.');
       const requested = Array.isArray(body.mealIds) ? body.mealIds : [];
       if (requested.length > 20 || !requested.every(id=>typeof id === 'string' && shared.has(id))) {
         throw new HttpError(400,'선택한 날짜의 공유 식단만 연결할 수 있습니다.');
       }
-      // Keep the inputs that explain any saved AI evidence.
-      const selected = requested.length ? requested : meals.map(meal=>meal.id);
-      const mealIds = [...new Set([...selected,...(base.evidence ? base.mealIds : [])])];
-      if (mealIds.length > 20) throw new HttpError(400,'관련 식단은 최대 20개까지 연결할 수 있습니다.');
+      if (body.draftId !== undefined) {
+        if (typeof body.draftId !== 'string' || !uuid.test(body.draftId)) throw race();
+        const stored = await redis<Preview|string|null>('GET',previewKey(body.draftId));
+        const preview:Preview|null = typeof stored === 'string' ? JSON.parse(stored) : stored;
+        if (!preview || preview.goalId !== goalId || preview.day !== day || preview.revision !== base.revision ||
+            preview.input !== inputSignature(meals,goal.criteria)) {
+          throw new HttpError(409,'AI 초안이 만료되었거나 식단이 변경되었습니다. 다시 생성해 주세요.');
+        }
+        next.evidence = preview.evidence;
+        evidenceMealIds = preview.mealIds;
+      }
       next = {...next,status:meals.length ? body.status as ProgressState : '판단불가',
-        mealIds,memo:shortText(body.memo ?? ''),confirmed:action === 'confirm',source:'사용자 입력'};
+        mealIds:[...new Set(requested)],memo:shortText(body.memo ?? ''),confirmed:false,source:'사용자 입력'};
+    } else if (action === 'confirm') {
+      next.confirmed = true;
     } else if (action === 'opinion') {
       const opinion = shortText(body.opinion);
       if (!opinion) throw new HttpError(400,'강사 의견을 입력해 주세요.');
@@ -134,9 +163,9 @@ export async function saveProgress(goalId:string,body:Record<string,unknown>) {
     if (current) {
       const {historyCount,...snapshot} = current;
       void historyCount;
-      history.push(snapshot);
+      history.push({...snapshot,evidenceMealIds:entry?.meta.evidenceMealIds ?? (current.evidence ? current.mealIds : [])});
     }
-    const meta:Meta = {criterion:'GP-1.0',revision:randomUUID(),deleted:action === 'remove',history};
+    const meta:Meta = {criterion:'GP-1.0',revision:randomUUID(),deleted:action === 'remove',evidenceMealIds,history};
     const properties = {
       '기록명':{title:rich(day+' · '+goal.title.slice(0,150)).rich_text},'평가 날짜':{date:{start:day}},
       '개선 목표':{relation:[{id:goalId}]},'관련 식단':{relation:next.mealIds.map(id=>({id}))},
@@ -193,10 +222,9 @@ export function summarizeProgress(goal:Goal,period:Period,records:Progress[],tod
   return {...counts,days,rate:denominator ? Math.round(counts.achieved/denominator*1000)/10 : null,lastDay};
 }
 
-export async function summarizeGoals(period:Period,today:string) {
-  const [goals,input,pages] = await Promise.all([publicGoals(),collectPeriod(period),queryNotion(source(),progressFields,{and:[
-    {property:'평가 날짜',date:{on_or_after:period.start}},{property:'평가 날짜',date:{before:period.until}},
-  ]})]);
+export async function summarizeGoals(period:Period,today:string,includeLatest=false) {
+  const [goals,input,pages] = await Promise.all([publicGoals(),collectPeriod(period),queryNotion(source(),progressFields,includeLatest ? undefined : {and:[
+    {property:'평가 날짜',date:{on_or_after:period.start}},{property:'평가 날짜',date:{before:period.until}},]})]);
   const mealsByDay = new Map<string,Set<string>>();
   for (const meal of input.meals) {
     const ids=mealsByDay.get(meal.date) ?? new Set<string>();
@@ -204,24 +232,52 @@ export async function summarizeGoals(period:Period,today:string) {
     mealsByDay.set(meal.date,ids);
   }
   const grouped = new Map<string,Progress[]>();
-  const seen = new Set<string>();
+  const considered = new Map<string,{page:Page;entry:Entry}>();
   for (const page of pages) {
     const entry = decode(page);
     const {goalId,day}=entry.record;
-    if (day < period.start || day >= period.until) continue;
+    if (!isDate(day) || day > today) continue;
     const key=goalId+':'+day;
-    if(seen.has(key)) throw race();
-    seen.add(key);
+    const previous = considered.get(key)?.page;
+    if (!previous || [page.last_edited_time ?? '',page.id].join(':') > [previous.last_edited_time ?? '',previous.id].join(':')) {
+      considered.set(key,{page,entry});
+    }
+  }
+  const latest = new Map<string,Entry[]>();
+  for (const {entry} of considered.values()) {
+    const {goalId,day}=entry.record;
+    if (includeLatest && !entry.meta.deleted) {
+      const entries=latest.get(goalId) ?? [];
+      entries.push(entry);
+      latest.set(goalId,entries);
+    }
+    if (day < period.start || day >= period.until) continue;
     const mealIds=mealsByDay.get(day) ?? new Set<string>();
     const record=safeRecord(entry,mealIds);
     if(record) {
       const records=grouped.get(goalId) ?? [];
-      const previous=entry.meta.history.findLast(item=>item.confirmed && item.mealIds.every(id=>mealIds.has(id)));
+      const previous=entry.meta.history.findLast(item=>item.confirmed && [...item.mealIds,...(item.evidenceMealIds ?? [])].every(id=>mealIds.has(id)));
       if (!record.confirmed && previous) records.push({...previous,historyCount:0});
       records.push(record);
       grouped.set(goalId,records);
     }
   }
-  return goals.map(goal=>({goalId:goal.id,title:goal.title,
-    summary:summarizeProgress(goal,period,grouped.get(goal.id) ?? [],today)}));
+  const extraDays = new Map<string,Promise<Set<string>>>();
+  async function newest(goalId:string) {
+    const entries=latest.get(goalId) ?? [];
+    entries.sort((a,b)=>b.record.day.localeCompare(a.record.day));
+    for (const entry of entries) {
+      const {day,status,confirmed}=entry.record;
+      let ids = mealsByDay.get(day);
+      if (!ids && (entry.record.mealIds.length || entry.meta.evidenceMealIds?.length)) {
+        if (!extraDays.has(day)) extraDays.set(day,mealsFor(day).then(meals=>new Set(meals.map(meal=>meal.id))));
+        ids = await extraDays.get(day);
+      }
+      if (safeRecord(entry,ids ?? new Set())) return {day,status,confirmed};
+    }
+    return null;
+  }
+  return Promise.all(goals.map(async goal=>({goalId:goal.id,title:goal.title,
+    latest:includeLatest ? await newest(goal.id) : undefined,
+    summary:summarizeProgress(goal,period,grouped.get(goal.id) ?? [],today)})));
 }

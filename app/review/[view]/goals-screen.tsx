@@ -45,10 +45,14 @@ function GoalCard({goal,today,onSaved,progress,onProgressSaved}:{goal:Goal;today
   }
 
   const latestOpinion = goal.history.findLast(event=>event.opinion)?.opinion;
-  return <article className="panel">
+  return <article className="panel goal-detail">
     <div className="section-heading"><h2>{goal.title}</h2><span className="pill">{goal.status}</span></div>
-    <p>{goal.kind} · {goal.criteria}</p>
+
     <GoalProgressCard goal={goal} today={today} summary={progress.items?.find(item=>item.goalId===goal.id)?.summary} summaryError={progress.error} onSaved={onProgressSaved}/>
+    <details className="goal-settings">
+    <summary>목표 관리</summary>
+    <p>{goal.kind} · {goal.criteria}</p>
+    {goal.source && <p className="report-copy">최초 근거 · {goal.source}</p>}
     {goal.evaluation && <p className="report-copy">{goal.evaluation}</p>}
     {goal.status !== '종료' && <form onSubmit={event=>{event.preventDefault();void save();}}>
       <label htmlFor={'state-'+goal.id}>진행 상태</label>
@@ -63,12 +67,15 @@ function GoalCard({goal,today,onSaved,progress,onProgressSaved}:{goal:Goal;today
       </div>}
       <button className="save" disabled={pending}>목표 업데이트</button>
     </form>}
+    </details>
+    <section className="goal-settings"><h3>목표 강사 의견</h3>
     <form onSubmit={event=>{event.preventDefault();void saveOpinion();}}>
       <label htmlFor={'opinion-'+goal.id}>강사 의견</label>
       {latestOpinion && <p className="report-copy">{latestOpinion}</p>}
       <textarea id={'opinion-'+goal.id} value={opinion} maxLength={1200} disabled={pending} onChange={e=>setOpinion(e.target.value)}/>
       <button className="save" disabled={pending || !opinion.trim()}>강사 의견 저장</button>
     </form>
+    </section>
     {goal.history.length > 0 && <details><summary>변경 이력</summary>
       <ul>{goal.history.map((event,index)=><li key={index}>{event.at.slice(0,10)} · {event.status}
         {event.evaluation && <p className="report-copy">{event.evaluation}</p>}
@@ -82,11 +89,13 @@ function GoalCard({goal,today,onSaved,progress,onProgressSaved}:{goal:Goal;today
 }
 
 export function GoalsScreen({today}:{today:string}) {
+  const [selected,setSelected] = useState<string|null>(null);
+  const [filter,setFilter] = useState('전체');
   const [goals,setGoals] = useState<Goal[]|null>(null);
   const [error,setError] = useState('');
   const [refresh,setRefresh] = useState(0);
   const [progressVersion,setProgressVersion] = useState(0);
-  const progress = useProgressSummary('weekly',periodKey('weekly',today),progressVersion);
+  const progress = useProgressSummary('weekly',periodKey('weekly',today),progressVersion,true);
   useEffect(()=>{
     const controller = new AbortController();
     call<Goal[]>('goals','GET',undefined,controller.signal).then(items=>{if (!controller.signal.aborted) setGoals(items);})
@@ -96,9 +105,35 @@ export function GoalsScreen({today}:{today:string}) {
   if (error) return <section className="panel"><p role="alert" className="error">{error}</p>
     <button onClick={()=>{setError('');setRefresh(refresh+1);}}>다시 불러오기</button></section>;
   if (!goals) return <p className="panel skeleton" role="status">개선 목표를 불러오는 중입니다.</p>;
-  return <div className="period-stack">
-    {!goals.length && <p className="panel">아직 등록된 개선 목표가 없습니다. 확정한 주간·월간 리뷰에서 목표를 추가할 수 있습니다.</p>}
-    {goals.map(goal=><GoalCard key={goal.id} goal={goal} today={today} progress={progress} onProgressSaved={()=>setProgressVersion(value=>value+1)}
-      onSaved={row=>{setGoals(previous=>previous?.map(item=>item.id === row.id ? row : item) ?? null);setProgressVersion(value=>value+1);}}/>)}
+  const active = goals.find(goal=>goal.id===selected);
+  if (active) return <div className="period-stack">
+    <a href="#goal-list" className="goal-back" onClick={event=>{
+      event.preventDefault();
+      setSelected(null);
+    }}>← 개선 목표 목록</a>
+    <GoalCard key={active.id} goal={active} today={today} progress={progress} onProgressSaved={()=>setProgressVersion(value=>value+1)}
+      onSaved={row=>{setGoals(previous=>previous?.map(item=>item.id === row.id ? row : item) ?? null);setProgressVersion(value=>value+1);}}/>
+  </div>;
+  const visible = goals.filter(goal=>filter === '전체' || goal.status === filter);
+  return <div className="period-stack" id="goal-list">
+    <div className="goal-list-filter"><label htmlFor="goal-filter">상태</label>
+      <select id="goal-filter" value={filter} onChange={event=>setFilter(event.target.value)}>
+        {['전체',...goalStates].map(state=><option key={state}>{state}</option>)}
+      </select><span>{visible.length}개 목표</span>
+    </div>
+    {!visible.length && <p className="panel">이 상태에 해당하는 목표가 없습니다.</p>}
+    {visible.map(goal=>{
+      const entry=progress.items?.find(item=>item.goalId===goal.id);
+      const stats=entry?.summary;
+      const recent=entry?.latest;
+      const days=stats ? stats.achieved+stats.partial+stats.missed : 0;
+      return <article key={goal.id} className="panel goal-list-card">
+        <div className="section-heading"><h2>{goal.title}</h2><span className="pill">{goal.status}</span></div>
+        <p>이번 주 · {stats?.rate != null ? '평가 '+days+'일 / 달성률 '+stats.rate+'%' : '평가 데이터 없음'}</p>
+        <p>최근 평가 · {recent ? recent.day+' · '+recent.status : '미기록'}</p>
+        {progress.error && <p className="error" role="alert">{progress.error}</p>}
+        <button className="save" onClick={()=>setSelected(goal.id)} aria-label={goal.title+' 달성 기록 관리'}>달성 기록 관리</button>
+      </article>;
+    })}
   </div>;
 }

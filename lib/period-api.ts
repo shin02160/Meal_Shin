@@ -10,7 +10,7 @@ export async function periodApi(request:Request,path:string[], readBody:()=>Prom
   const method = request.method;
   if (area === 'goals' && method === 'GET' && id === 'progress-summary' && path.length === 2) {
     const params = new URL(request.url).searchParams;
-    return json(await summarizeGoals(periodFor(params.get('type'),params.get('key')),todayKst()));
+    return json(await summarizeGoals(periodFor(params.get('type'),params.get('key')),todayKst(),params.get('latest') === '1'));
   }
   if (area === 'goals' && action === 'progress' && path.length === 3) {
     if (method === 'GET') return json(await readProgress(id,new URL(request.url).searchParams.get('day')));

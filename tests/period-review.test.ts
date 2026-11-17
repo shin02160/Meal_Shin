@@ -252,14 +252,26 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   const progressDay = '2026-11-18';
   const saveProgress = (action:string,expectedRevision='',extra={}) =>
     api(progressPath,'POST',{day:progressDay,action,expectedRevision,...extra});
-  const concurrentProgress = await Promise.all([saveProgress('draft'),saveProgress('draft')]);
+  const preview = await saveProgress('draft');
+  assert.equal(preview.status,200);
+  const {draft:previewDraft} = await preview.json();
+  assert.equal(previewDraft.status,'부분달성');
+  assert.deepEqual(previewDraft.mealIds,['tea']);
+  assert.equal(rows[progressId].length,0);
+  assert.equal((await saveProgress('confirm')).status,409);
+  assert.equal((await saveProgress('save','',{status:'부분달성',mealIds:['unshared-meal'],draftId:previewDraft.id})).status,400);
+  const concurrentProgress = await Promise.all([
+    saveProgress('save','',{status:previewDraft.status,mealIds:[],draftId:previewDraft.id,memo:'확인 메모'}),
+    saveProgress('save','',{status:previewDraft.status,mealIds:[],draftId:previewDraft.id,memo:'확인 메모'}),
+  ]);
   assert.deepEqual(concurrentProgress.map(item=>item.status).sort(),[200,409]);
   const {record:progressDraft} = await concurrentProgress.find(item=>item.ok)!.json();
   assert.equal(progressDraft.confirmed,false);
-  assert.deepEqual(progressDraft.mealIds,['tea']);
-  assert.equal(progressDraft.status,'부분달성');
-  assert.equal((await saveProgress('confirm',progressDraft.revision,{status:'부분달성',mealIds:['unshared-meal']})).status,400);
-  const {record:progressFinal} = await (await saveProgress('confirm',progressDraft.revision,{status:'부분달성',mealIds:['tea'],memo:'확인 메모'})).json();
+  assert.deepEqual(progressDraft.mealIds,[]);
+  assert.equal(progressDraft.evidence,'가상 기록 근거');
+  assert.equal(rows[progressId].length,1);
+  const {record:progressFinal} = await (await saveProgress('confirm',progressDraft.revision,{status:'달성'})).json();
+  assert.equal(progressFinal.status,'부분달성');
   assert.equal(progressFinal.confirmed,true);
   assert.equal(progressFinal.evidence,'가상 기록 근거');
   assert.equal((await saveProgress('save',progressFinal.revision,{status:'달성'})).status,409);
@@ -284,6 +296,18 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   assert.equal(emptyRecord.status,'판단불가');
   assert.equal((await api(progressPath,'POST',{day:'2026-11-17',action:'remove',expectedRevision:emptyRecord.revision})).status,200);
   assert.equal((await (await api(emptyProgressPath)).json()).record,null);
+  const selectedOnly=await api(progressPath,'POST',{day,action:'save',status:'달성',mealIds:['second']});
+  assert.equal(selectedOnly.status,200);
+  const selectedRead=await (await api(progressPath+'?day='+day)).json();
+  assert.deepEqual(selectedRead.record.mealIds,['second']);
+  const latestList=await (await api(progressSummary+'&latest=1')).json();
+  assert.equal(latestList[0].latest.day,progressDay);
+  const original=rows[progressId].find(row=>row.id===progressFinal.id)!;
+  const duplicate={...original,id:'11111111-1111-1111-1111-000000000777',last_edited_time:'2026-11-18T12:20:00Z'};
+  rows[progressId].push(duplicate);
+  assert.equal((await (await api(progressSummary)).json())[0].summary.partial,1);
+  assert.equal((await api(progressPath+'?day='+progressDay)).status,409);
+  rows[progressId].pop();
 
   const month = await generate(false,0,'monthly','2026-11');
   assert.equal(month.status,200);
