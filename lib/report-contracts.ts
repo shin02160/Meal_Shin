@@ -13,6 +13,7 @@ export type ReportState = 'AI 초안' | '검토중' | '확정';
 export type ReportVersion = {
   id:string; version:number; revision:string; state:ReportState; createdAt:string; confirmedAt?:string;
   feedback:string; draft:Draft|null; sources:PeriodInput['refs']; fingerprint:string;
+  imported?:{evidence:string};
   model:string; actor:'anonymous'; stats:PeriodInput['stats']; weeklyRefs:string[];
 };
 export type Goal = {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { redis } from './auth';
+import { collectPeriod } from './analysis-input';
 import { HttpError } from './errors';
 import { NotionError, notion, queryNotion, text, type Page } from './notion';
 import { periodFor, type Period } from './period';
@@ -105,7 +106,26 @@ function metadata(content:ReportContent) {
 
 export async function decodeReport(page: Page):Promise<ReportVersion> {
   const stored = property(page,'AI 분석 초안');
-  const envelope = parse<ReportMeta & {revision?:string}>(property(page,'분석 근거'));
+  const evidence = property(page,'분석 근거');
+  if (stored.trim() && stored !== bodyMarker && !/^[\s]*[{[]/.test(stored) &&
+      !/^[\s]*[{[]/.test(evidence)) {
+    const period = periodFor(page.properties['분석 단위']?.select?.name === '주간' ? 'weekly' : 'monthly',property(page,'기간 키'));
+    const {stats} = await collectPeriod(period);
+    const version = page.properties['분석 버전']?.number;
+    const state = page.properties['분석 상태']?.select?.name;
+    if (!version || !Number.isInteger(version) || !['AI 초안','검토중','확정'].includes(state ?? '')) throw race();
+    return {
+      id:page.id,version,state:state as ReportVersion['state'],revision:page.last_edited_time ?? '',
+      createdAt:page.properties['생성 일시']?.date?.start ?? '',confirmedAt:page.properties['확정 일시']?.date?.start,
+      feedback:property(page,'최종 종합 총평'),draft:{
+        summary:{text:stored,evidence:[]},observations:[],strengths:[],interpretations:[],improvements:[],
+        goalAssessments:[],proposedGoals:[],limitations:[],
+      },
+      sources:[],fingerprint:'',model:property(page,'AI 모델 정보'),stats,weeklyRefs:[],actor:'anonymous',
+      imported:{evidence},
+    };
+  }
+  const envelope = parse<ReportMeta & {revision?:string}>(evidence);
   let content:ReportContent;
   if (stored === bodyMarker) {
     const blocks = await notion<{results:{type:string;paragraph?:{rich_text:{plain_text:string}[]}}[];next_cursor:string|null}>(

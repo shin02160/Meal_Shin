@@ -15,7 +15,7 @@ type History = {id:string;version:number;confirmedAt?:string;hidden:true} | Repo
 function Claims({label,claims,row}:{label:string;claims:Claim[];row:ReportVersion}) {
   if (!claims.length) return null;
   return <section><h3>{label}</h3><ul>{claims.map((claim,index) => <li key={index}>
-    <p>{claim.text}</p>
+    <p className="report-copy">{claim.text}</p>
     <span className="evidence">{claim.evidence.map(id => {
       const ref = row.sources.find(source=>source.id === id);
       return ref ? <Link key={id} href={'/review?date=' + ref.date}>{ref.date} {ref.kind === 'meal' ? '식단' : '일별 총평'}</Link> :
@@ -43,7 +43,7 @@ export function PeriodScreen({type,initialKey}:{type:PeriodType;initialKey:strin
   const final = active?.final;
   const analysis = active?.analysis;
   const draft = analysis?.draft;
-  const edit = current && current.state !== '확정' && !active?.currentStale;
+  const edit = current && !current.imported && current.state !== '확정' && !active?.currentStale;
   const create = active && !edit && (!current || manual);
   const sourceId = current?.id ?? active?.historyId;
 
@@ -146,6 +146,7 @@ export function PeriodScreen({type,initialKey}:{type:PeriodType;initialKey:strin
           <Claims label="AI 해석" claims={draft.interpretations} row={analysis}/>
           <Claims label="AI 개선 제안" claims={draft.improvements} row={analysis}/>
           {draft.limitations.map(item=><p key={item}>{item}</p>)}
+          {analysis.imported?.evidence && <section><h3>분석 근거</h3><p className="report-copy">{analysis.imported.evidence}</p></section>}
         </details>}
         {current && !edit && !manual && <button disabled={pending || confirming} onClick={()=>{
           setFeedback(final?.feedback ?? '');

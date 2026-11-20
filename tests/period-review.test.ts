@@ -131,7 +131,17 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
       const source = query[1];
       if (source === mealsId) {
         assert(!url.searchParams.getAll('filter_properties').includes('식사 메모'));
-        assert.deepEqual(body.filter.and[0],{property:'공유 여부',checkbox:{equals:true}});
+        const shared=body.filter.and[0].checkbox.equals;
+        assert.equal(typeof shared,'boolean');
+        if (!shared) {
+          const start=Date.parse(body.filter.and[1].date.on_or_after);
+          const until=Date.parse(body.filter.and[2].date.before);
+          return Response.json({results:rows[source].filter(row=>{
+            const props=row.properties as Record<string,{checkbox?:boolean;date?:{start:string}}>;
+            const time=Date.parse(props['식사 시작']?.date?.start ?? '');
+            return props['공유 여부'].checkbox===false && time>=start && time<until;
+          }),next_cursor:null});
+        }
       }
       // Source adapters must recheck the scope even if upstream returns unexpected records.
       let results = rows[source];
@@ -329,6 +339,26 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   assert.deepEqual(modelInput?.weekly.map(item=>item.id),[final.id]);
   assert.equal((await (await api(monthPath)).json()).stats.weeks.length,3);
 
+  const importedId='11111111-1111-1111-1111-000000000888';
+  const imported:Row={id:importedId,parent:{data_source_id:reportsId},last_edited_time:at,properties:{
+    '기간 키':{rich_text:text(key)},'분석 단위':{select:{name:'주간'}},
+    '분석 버전':{number:3},'분석 상태':{select:{name:'AI 초안'}},
+    'AI 분석 초안':{rich_text:text('외부에서 작성한 샘플 분석\n두 번째 줄')},
+    '분석 근거':{rich_text:text('공유 식단 기준 샘플 분석 근거')},
+  }};
+  rows[reportsId].push(imported);
+  const excluded = rows[mealsId].find(row=>row.id==='unshared-meal')!;
+  const originalShared=excluded.properties['공유 여부'];
+  excluded.properties['공유 여부']={checkbox:true};
+  const importedView=await (await api(weekPath)).json();
+  assert.equal(importedView.analysis.id,importedId);
+  assert.equal(importedView.analysis.draft.summary.text,'외부에서 작성한 샘플 분석\n두 번째 줄');
+  assert.equal(importedView.analysis.imported.evidence,'공유 식단 기준 샘플 분석 근거');
+  excluded.properties['공유 여부']=originalShared;
+  const restrictedImport=await (await api(weekPath)).json();
+  assert.notEqual(restrictedImport.analysis?.id,importedId);
+  assert(!JSON.stringify(restrictedImport).includes('외부에서 작성한 샘플 분석'));
+  rows[reportsId].pop();
   const first = rows[mealsId][0];
   first.properties['기록명'] = {title:text('수정한 공유 식단')};
   const stale = await (await api(weekPath)).json();

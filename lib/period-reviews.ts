@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { collectPeriod, type PeriodInput } from './analysis-input';
 import { feedbackLimit } from './contracts';
 import { HttpError } from './errors';
-import { NotionError } from './notion';
+import { NotionError, mealSource, queryNotion } from './notion';
 import { kstDate, periodFor, type Period } from './period';
 import { generateDraft } from './report-ai';
 import { goalStates, type Goal, type ReportVersion } from './report-contracts';
@@ -13,7 +13,21 @@ function refKey(ref:PeriodInput['refs'][number]) { return ref.kind + ':' + ref.i
 
 function makeSourceCheck() {
   const lookups = new Map<string,Promise<Set<string>>>();
-  return async (row:Pick<ReportVersion,'sources'>,period:Period,input:PeriodInput) => {
+  const imports = new Map<string,Promise<boolean>>();
+  return async (row:Pick<ReportVersion,'sources'|'imported'>,period:Period,input:PeriodInput) => {
+    if (row.imported) {
+      const key = period.type+':'+period.key;
+      if (!imports.has(key)) imports.set(key,(async()=>{
+        if (!input.meals.length) return false;
+        const privateMeals = await queryNotion(mealSource(),{'공유 여부':'checkbox'}, {and:[
+          {property:'공유 여부',checkbox:{equals:false}},
+          {property:'식사 시작',date:{on_or_after:period.start+'T00:00:00+09:00'}},
+          {property:'식사 시작',date:{before:period.until+'T00:00:00+09:00'}},
+        ]},1);
+        return privateMeals.length===0;
+      })());
+      return imports.get(key)!;
+    }
     const available = new Set(input.refs.map(refKey));
     const external = row.sources.filter(ref=>ref.date < period.start || ref.date >= period.until);
     const missingInside = row.sources.some(ref=>ref.date >= period.start && ref.date < period.until && !available.has(refKey(ref)));
@@ -43,7 +57,7 @@ export async function readPeriod(period: Period) {
     }
   }
   return {period,stats:input.stats,daily:input.daily,analysis,historyId:final?.id,
-    needsReview:!!(current && !showCurrent || final && !showFinal) || [current,final,analysis].some(row => row && row.fingerprint !== input.fingerprint),
+    needsReview:!!(current && !showCurrent || final && !showFinal) || [current,final,analysis].some(row => row && !row.imported && row.fingerprint !== input.fingerprint),
     currentStale:!!current && current.fingerprint !== input.fingerprint,
     current:showCurrent ? current : null,
     final:showFinal ? final : null,
