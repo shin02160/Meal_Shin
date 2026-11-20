@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { collectPeriod, type PeriodInput } from './analysis-input';
 import { feedbackLimit } from './contracts';
 import { HttpError } from './errors';
+import { importedReportScope } from './imported-report-scope';
 import { readReportBody } from './report-body';
 import { NotionError, mealSource, queryNotion } from './notion';
 import { kstDate, periodFor, type Period } from './period';
@@ -17,13 +18,14 @@ function makeSourceCheck() {
   const imports = new Map<string,Promise<boolean>>();
   return async (row:Pick<ReportVersion,'sources'|'imported'>,period:Period,input:PeriodInput) => {
     if (row.imported) {
-      const key = period.type+':'+period.key;
+      const scope = importedReportScope(period,row.imported.evidence);
+      const key = scope.start+':'+scope.until;
       if (!imports.has(key)) imports.set(key,(async()=>{
-        if (!input.meals.length) return false;
+        if (!input.meals.some(meal=>meal.date>=scope.start && meal.date<scope.until)) return false;
         const privateMeals = await queryNotion(mealSource(),{'공유 여부':'checkbox'}, {and:[
           {property:'공유 여부',checkbox:{equals:false}},
-          {property:'식사 시작',date:{on_or_after:period.start+'T00:00:00+09:00'}},
-          {property:'식사 시작',date:{before:period.until+'T00:00:00+09:00'}},
+          {property:'식사 시작',date:{on_or_after:scope.start+'T00:00:00+09:00'}},
+          {property:'식사 시작',date:{before:scope.until+'T00:00:00+09:00'}},
         ]},1);
         return privateMeals.length===0;
       })());
