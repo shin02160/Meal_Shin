@@ -53,6 +53,7 @@ const reportFields = {
   '기간 키':'rich_text','분석 단위':'select','분석 버전':'number','분석 상태':'select','AI 분석 초안':'rich_text',
   '최종 종합 총평':'rich_text','분석 근거':'rich_text','확정 일시':'date','생성 일시':'date','데이터 지문':'rich_text',
   'AI 모델 정보':'rich_text','기간 시작일':'date','기간 종료일':'date',
+  '긍정적 변화':'rich_text','개선 필요사항':'rich_text',
 };
 const goalFields = {
   '개선 목표':'title','목표 ID':'rich_text','목표 유형':'select','목표 상태':'select','실천 기준':'rich_text',
@@ -118,7 +119,10 @@ export async function decodeReport(page: Page):Promise<ReportVersion> {
       id:page.id,version,state:state as ReportVersion['state'],revision:page.last_edited_time ?? '',
       createdAt:page.properties['생성 일시']?.date?.start ?? '',confirmedAt:page.properties['확정 일시']?.date?.start,
       feedback:property(page,'최종 종합 총평'),draft:{
-        summary:{text:stored,evidence:[]},observations:[],strengths:[],interpretations:[],improvements:[],
+        summary:{text:stored,evidence:[]},observations:[],
+        strengths:property(page,'긍정적 변화') ? [{text:property(page,'긍정적 변화'),evidence:[]}] : [],
+        interpretations:[],
+        improvements:property(page,'개선 필요사항') ? [{text:property(page,'개선 필요사항'),evidence:[]}] : [],
         goalAssessments:[],proposedGoals:[],limitations:[],
       },
       sources:[],fingerprint:'',model:property(page,'AI 모델 정보'),stats,weeklyRefs:[],actor:'anonymous',

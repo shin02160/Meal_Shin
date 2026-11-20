@@ -346,6 +346,15 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
     'AI 분석 초안':{rich_text:text('외부에서 작성한 샘플 분석\n두 번째 줄')},
     '분석 근거':{rich_text:text('공유 식단 기준 샘플 분석 근거')},
   }};
+  blockBodies.set(importedId,[
+    {id:'sample-heading',type:'heading_2',heading_2:{rich_text:text('샘플 상세 분석')}},
+    {id:'sample-paragraph',type:'paragraph',paragraph:{rich_text:text('본문에만 저장된 샘플 상세 내용')}},
+    {id:'sample-table',type:'table',has_children:true,table:{has_column_header:true,has_row_header:false}},
+  ]);
+  blockBodies.set('sample-table',[
+    {id:'sample-header',type:'table_row',table_row:{cells:[text('날짜'),text('식단')]}},
+    {id:'sample-row',type:'table_row',table_row:{cells:[text('11/16'),text('샘플 식단')]}},
+  ]);
   rows[reportsId].push(imported);
   const excluded = rows[mealsId].find(row=>row.id==='unshared-meal')!;
   const originalShared=excluded.properties['공유 여부'];
@@ -354,10 +363,13 @@ test('public period workflow verifies reports, Notion snapshots and goals with s
   assert.equal(importedView.analysis.id,importedId);
   assert.equal(importedView.analysis.draft.summary.text,'외부에서 작성한 샘플 분석\n두 번째 줄');
   assert.equal(importedView.analysis.imported.evidence,'공유 식단 기준 샘플 분석 근거');
+  assert.equal(importedView.analysis.imported.body[1].text,'본문에만 저장된 샘플 상세 내용');
+  assert.deepEqual(importedView.analysis.imported.body[2].children[1].cells,['11/16','샘플 식단']);
   excluded.properties['공유 여부']=originalShared;
   const restrictedImport=await (await api(weekPath)).json();
   assert.notEqual(restrictedImport.analysis?.id,importedId);
   assert(!JSON.stringify(restrictedImport).includes('외부에서 작성한 샘플 분석'));
+  assert(!JSON.stringify(restrictedImport).includes('본문에만 저장된 샘플 상세 내용'));
   rows[reportsId].pop();
   const first = rows[mealsId][0];
   first.properties['기록명'] = {title:text('수정한 공유 식단')};

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { collectPeriod, type PeriodInput } from './analysis-input';
 import { feedbackLimit } from './contracts';
 import { HttpError } from './errors';
+import { readReportBody } from './report-body';
 import { NotionError, mealSource, queryNotion } from './notion';
 import { kstDate, periodFor, type Period } from './period';
 import { generateDraft } from './report-ai';
@@ -56,6 +57,7 @@ export async function readPeriod(period: Period) {
       break;
     }
   }
+  if (analysis?.imported) analysis.imported.body = await readReportBody(analysis.id);
   return {period,stats:input.stats,daily:input.daily,analysis,historyId:final?.id,
     needsReview:!!(current && !showCurrent || final && !showFinal) || [current,final,analysis].some(row => row && !row.imported && row.fingerprint !== input.fingerprint),
     currentStale:!!current && current.fingerprint !== input.fingerprint,
