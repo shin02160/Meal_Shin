@@ -140,14 +140,15 @@ export function PeriodScreen({type,initialKey}:{type:PeriodType;initialKey:strin
           <button disabled={pending || confirming} onClick={()=>{if (!dirty || window.confirm('저장하지 않은 수정 내용을 버리시겠어요?')) {setView(null);setRefresh(refresh + 1);setHistory(null);}}}>새로고침</button>
         </div>
         {!draft && <p>저장된 AI 분석이 없습니다.</p>}
-        {analysis && draft && <details open><summary>저장된 AI 분석 및 근거</summary>
+        {analysis && draft && <details open><summary>저장된 AI 분석</summary>
           <Claims label="AI 요약" claims={[draft.summary]} row={analysis}/>
           <Claims label="관찰 사실" claims={draft.observations} row={analysis}/>
           <Claims label="긍정적 변화" claims={draft.strengths} row={analysis}/>
           <Claims label="AI 해석" claims={draft.interpretations} row={analysis}/>
-          <Claims label="AI 개선 제안" claims={draft.improvements} row={analysis}/>
+          <Claims label="개선 필요사항" claims={draft.improvements} row={analysis}/>
+          {!analysis.imported && <Claims label="추가 목표 제안" claims={draft.proposedGoals} row={analysis}/>}
           {draft.limitations.map(item=><p key={item}>{item}</p>)}
-          {analysis.imported?.evidence && <section><h3>분석 근거</h3><p className="report-copy">{analysis.imported.evidence}</p></section>}
+
         </details>}
         {analysis?.imported?.body && analysis.imported.body.length > 0 && <ReportBody blocks={analysis.imported.body}/>}
         {current && !edit && !manual && <button disabled={pending || confirming} onClick={()=>{
